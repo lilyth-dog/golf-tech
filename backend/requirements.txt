@@ -1,0 +1,11 @@
+django
+djangorestframework
+django-cors-headers
+requests
+channels
+numpy
+daphne
+celery
+redis
+moviepy
+opencv-python

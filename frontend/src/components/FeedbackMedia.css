@@ -1,0 +1,75 @@
+.feedback-media {
+    padding: 24px;
+    background: linear-gradient(145deg, #1a1a2e, #16213e);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.feedback-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 20px 0;
+}
+
+.ai-advice-card {
+    display: flex;
+    gap: 12px;
+    background: rgba(0, 255, 136, 0.1);
+    border: 1px solid rgba(0, 255, 136, 0.3);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 24px;
+}
+
+.advice-icon {
+    font-size: 24px;
+}
+
+.advice-text {
+    color: rgba(255, 255, 255, 0.9);
+    line-height: 1.6;
+    margin: 0;
+}
+
+.media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.media-card {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid rgba(100, 200, 255, 0.15);
+}
+
+.media-card h4 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.feedback-image,
+.feedback-video {
+    width: 100%;
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+
+.download-button {
+    display: inline-block;
+    padding: 10px 20px;
+    background: rgba(0, 212, 255, 0.2);
+    color: #00d4ff;
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.download-button:hover {
+    background: rgba(0, 212, 255, 0.3);
+    transform: translateY(-1px);
+}

@@ -1,0 +1,70 @@
+.swing-analysis-page {
+    min-height: 100vh;
+    padding: 24px;
+    background: linear-gradient(180deg, #0f0f23 0%, #1a1a2e 100%);
+    color: #fff;
+}
+
+.page-header {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.page-header h1 {
+    font-size: 32px;
+    font-weight: 800;
+    margin: 0 0 12px 0;
+    background: linear-gradient(135deg, #fff 0%, #00d4ff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.page-header p {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 16px;
+    margin: 0;
+}
+
+.analysis-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.analysis-grid section {
+    display: flex;
+    flex-direction: column;
+}
+
+.analysis-grid h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.8);
+    margin: 0 0 16px 0;
+}
+
+.upload-section,
+.live-section {
+    flex: 1;
+}
+
+.feedback-section {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 768px) {
+    .swing-analysis-page {
+        padding: 16px;
+    }
+
+    .page-header h1 {
+        font-size: 24px;
+    }
+
+    .analysis-grid {
+        grid-template-columns: 1fr;
+    }
+}
