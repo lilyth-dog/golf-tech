@@ -1,18 +1,11 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { PoseLandmarker, FilesetResolver, DrawingUtils } from '@mediapipe/tasks-vision';
+import type { Landmark, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { Camera, Box, Activity, Wifi, WifiOff, Zap } from 'lucide-react';
 import { calculateAngle, calculateSpineAngle } from '../utils/geometry';
 import { createAnalysis } from '../api/analysis';
 import type { AnalysisResult } from '../api/analysis';
 import SwingCanvas from '../components/SwingCanvas';
-
-type PosePoint3D = {
-  x: number;
-  y: number;
-  z: number;
-  visibility?: number;
-  presence?: number;
-};
 
 export default function VideoAnalyzer3D() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -20,7 +13,7 @@ export default function VideoAnalyzer3D() {
   const [landmarker, setLandmarker] = useState<PoseLandmarker | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [metrics, setMetrics] = useState({ shoulder: 0, hip: 0, knee: 0, spine: 0, handZ: 0 });
-  const [worldLandmarks, setWorldLandmarks] = useState<PosePoint3D[]>([]);
+  const [worldLandmarks, setWorldLandmarks] = useState<Landmark[]>([]);
   const [aiResult, setAiResult] = useState<AnalysisResult | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
@@ -100,9 +93,9 @@ export default function VideoAnalyzer3D() {
         const result = landmarker.detectForVideo(videoRef.current, timestampMs);
         
         if (result.landmarks && result.landmarks.length > 0) {
-            drawLandmarks(result.landmarks[0] as PosePoint3D[]);
-            calculateMetrics3D(result.worldLandmarks[0] as PosePoint3D[]); 
-            setWorldLandmarks(result.worldLandmarks[0] as PosePoint3D[]);
+            drawLandmarks(result.landmarks[0] as NormalizedLandmark[]);
+            calculateMetrics3D(result.worldLandmarks[0] as Landmark[]); 
+            setWorldLandmarks(result.worldLandmarks[0] as Landmark[]);
             
             // Stream to Backend -> Unreal
             if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
@@ -132,7 +125,7 @@ export default function VideoAnalyzer3D() {
   }, [analyzing, landmarker, predictWebcam]);
 
   // 3. Drawing (2D Overlay)
-  const drawLandmarks = (landmarks: PosePoint3D[]) => {
+  const drawLandmarks = (landmarks: NormalizedLandmark[]) => {
       const ctx = canvasRef.current?.getContext('2d');
       if (!ctx || !canvasRef.current) return;
       
@@ -159,7 +152,7 @@ export default function VideoAnalyzer3D() {
   };
 
   // 4. Metrics Calculation
-  const calculateMetrics3D = (landmarks: PosePoint3D[]) => {
+  const calculateMetrics3D = (landmarks: Landmark[]) => {
       // 11=LeftShoulder, 12=RightShoulder, 23=LeftHip, 24=RightHip, 25=LeftKnee, 27=LeftAnkle, 16=RightWrist
       const leftShoulder = landmarks[11];
       const rightShoulder = landmarks[12];
@@ -172,7 +165,7 @@ export default function VideoAnalyzer3D() {
       if (!leftShoulder || !rightHip) return;
 
       const handZ = rightWrist.z * 100;
-      const toPoint = (lm: PosePoint3D) => ({ position: { x: lm.x, y: lm.y } });
+      const toPoint = (lm: Landmark) => ({ position: { x: lm.x, y: lm.y } });
 
       const shoulderAng = calculateAngle(
               { position: { x: leftShoulder.x, y: leftShoulder.y - 1 } }, // Vertical

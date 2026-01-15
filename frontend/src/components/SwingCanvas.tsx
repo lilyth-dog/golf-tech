@@ -4,23 +4,16 @@ import { OrbitControls, Grid, Line } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { PoseLandmarker } from '@mediapipe/tasks-vision';
+import type { Landmark } from '@mediapipe/tasks-vision';
 
 // BlazePose topology connections
 const CONNECTIONS = PoseLandmarker.POSE_CONNECTIONS;
 
 interface SwingCanvasProps {
-  landmarks: PosePoint3D[]; // MediaPipe World Landmarks
+  landmarks: Landmark[]; // MediaPipe World Landmarks
 }
 
-type PosePoint3D = {
-  x: number;
-  y: number;
-  z: number;
-  visibility?: number;
-  presence?: number;
-};
-
-function Skeleton({ landmarks }: { landmarks: PosePoint3D[] }) {
+function Skeleton({ landmarks }: { landmarks: Landmark[] }) {
   const points = useMemo(() => {
     if (!landmarks || landmarks.length === 0) return [];
     return landmarks.map(lm => new THREE.Vector3(lm.x, -lm.y, -lm.z)); // Flip Y/Z
