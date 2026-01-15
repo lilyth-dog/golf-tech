@@ -166,13 +166,15 @@ class GolfPhysicsEngine:
 
         sh_deg = np.array([float(f["shoulder_angle"]) for f in fs], dtype=float)
         hp_deg = np.array([float(f["hip_rotation"]) for f in fs], dtype=float)
+        # Use raw separation for phase detection to avoid smoothing bias on peaks.
+        x_deg_raw = np.abs(sh_deg - hp_deg)
 
         # Smooth raw angles before differentiation (basic noise suppression).
         sh_deg_s = self._moving_average(sh_deg, window=5)
         hp_deg_s = self._moving_average(hp_deg, window=5)
 
-        x_deg = np.abs(sh_deg_s - hp_deg_s)
-        peak_idx = int(np.argmax(x_deg))
+        x_deg_s = np.abs(sh_deg_s - hp_deg_s)
+        peak_idx = int(np.argmax(x_deg_raw))
 
         t0_ms = float(ts[0])
         t_peak_ms = float(ts[peak_idx])
@@ -183,8 +185,8 @@ class GolfPhysicsEngine:
         downswing_time_s = downswing_ms / 1000.0
         swing_tempo_ratio = backswing_ms / downswing_ms if downswing_ms > 0 else 3.0
 
-        x_peak = float(x_deg[peak_idx])
-        x_end = float(x_deg[-1])
+        x_peak = float(x_deg_raw[peak_idx])
+        x_end = float(x_deg_raw[-1])
 
         # --- Impact (release minimum) detection ---
         # Search for minimal separation after peak within a plausible window.
@@ -194,23 +196,23 @@ class GolfPhysicsEngine:
         after_mask = (ts >= min_after_ms) & (ts <= max_after_ms)
         after_idx = np.where(after_mask)[0]
         if after_idx.size > 0:
-            impact_local = int(after_idx[np.argmin(x_deg[after_idx])])
+            impact_local = int(after_idx[np.argmin(x_deg_raw[after_idx])])
         else:
             # Fallback: minimal after peak, else last.
-            if peak_idx < (len(x_deg) - 1):
-                impact_local = int(peak_idx + np.argmin(x_deg[peak_idx + 1 :]))
+            if peak_idx < (len(x_deg_raw) - 1):
+                impact_local = int(peak_idx + np.argmin(x_deg_raw[peak_idx + 1 :]))
             else:
-                impact_local = int(len(x_deg) - 1)
-        impact_idx = int(self._clamp(impact_local, peak_idx, len(x_deg) - 1))
+                impact_local = int(len(x_deg_raw) - 1)
+        impact_idx = int(self._clamp(impact_local, peak_idx, len(x_deg_raw) - 1))
 
-        x_impact = float(x_deg[impact_idx])
+        x_impact = float(x_deg_raw[impact_idx])
         t_impact_ms = float(ts[impact_idx])
 
         # --- Angular velocities (rad/s) ---
         # Use numerical derivative with uneven time base; then smooth.
         sh_rad = sh_deg_s * (np.pi / 180.0)
         hp_rad = hp_deg_s * (np.pi / 180.0)
-        x_rad = x_deg * (np.pi / 180.0)
+        x_rad = x_deg_s * (np.pi / 180.0)
 
         # np.gradient handles uneven spacing when provided with time.
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -224,7 +226,7 @@ class GolfPhysicsEngine:
 
         # Down/impact window indices: from peak -> impact (inclusive)
         ds_start = peak_idx
-        ds_end = impact_idx if impact_idx > peak_idx else min(len(x_deg) - 1, peak_idx + 1)
+        ds_end = impact_idx if impact_idx > peak_idx else min(len(x_deg_raw) - 1, peak_idx + 1)
         ds_slice = slice(ds_start, ds_end + 1)
 
         omega_shoulder_peak = float(np.nanmax(np.abs(sh_omega[ds_slice]))) if sh_omega.size else 0.0
