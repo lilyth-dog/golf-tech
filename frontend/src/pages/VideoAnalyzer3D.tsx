@@ -4,7 +4,7 @@ import type { Landmark, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { Camera, Box, Activity, Wifi, WifiOff, Zap } from 'lucide-react';
 import { calculateAngle, calculateSpineAngle } from '../utils/geometry';
 import { createAnalysis } from '../api/analysis';
-import type { AnalysisResult } from '../api/analysis';
+import type { AnalysisFrame, AnalysisResult } from '../api/analysis';
 import SwingCanvas from '../components/SwingCanvas';
 
 export default function VideoAnalyzer3D() {
@@ -22,6 +22,8 @@ export default function VideoAnalyzer3D() {
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const analyzingRef = useRef(false);
+  const framesRef = useRef<AnalysisFrame[]>([]);
+  const lastSampleMsRef = useRef<number | null>(null);
 
   // 1. WebSocket Connection with Auto-Reconnect
   const connectWebSocket = useCallback(function connectWebSocket() {
@@ -94,8 +96,27 @@ export default function VideoAnalyzer3D() {
         
         if (result.landmarks && result.landmarks.length > 0) {
             drawLandmarks(result.landmarks[0] as NormalizedLandmark[]);
-            calculateMetrics3D(result.worldLandmarks[0] as Landmark[]); 
+            const nextMetrics = calculateMetrics3D(result.worldLandmarks[0] as Landmark[]);
             setWorldLandmarks(result.worldLandmarks[0] as Landmark[]);
+
+            // Sample ~30fps to avoid huge payloads
+            if (nextMetrics) {
+              const last = lastSampleMsRef.current;
+              if (last === null || timestampMs - last >= 33) {
+                lastSampleMsRef.current = timestampMs;
+                framesRef.current.push({
+                  timestamp_ms: timestampMs,
+                  shoulder_angle: Math.abs(nextMetrics.shoulder),
+                  hip_rotation: Math.abs(nextMetrics.hip),
+                  knee_flexion: Math.abs(nextMetrics.knee),
+                  spine_angle: Math.abs(nextMetrics.spine),
+                });
+                // Cap frames buffer (about 20s @ 30fps)
+                if (framesRef.current.length > 600) {
+                  framesRef.current.splice(0, framesRef.current.length - 600);
+                }
+              }
+            }
             
             // Stream to Backend -> Unreal
             if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
@@ -180,17 +201,22 @@ export default function VideoAnalyzer3D() {
       const kneeFlex = calculateAngle(toPoint(leftHip), toPoint(leftKnee), toPoint(leftAnkle));
       const spine = calculateSpineAngle(toPoint(leftShoulder), toPoint(rightShoulder), toPoint(leftHip), toPoint(rightHip));
 
-      setMetrics({
+      const next = {
           shoulder: Math.round(90 - shoulderAng),
           hip: Math.round(90 - hipAng),
           knee: Math.round(180 - kneeFlex),
           spine: Math.round(spine),
           handZ: handZ
-      });
+      };
+
+      setMetrics(next);
+      return next;
   };
 
   const startCamera = async () => {
     try {
+      framesRef.current = [];
+      lastSampleMsRef.current = null;
       const constraints = { video: { width: 1280, height: 720 } };
       const s = await navigator.mediaDevices.getUserMedia(constraints);
       setStream(s);
@@ -214,9 +240,12 @@ export default function VideoAnalyzer3D() {
              shoulder_angle: Math.abs(metrics.shoulder),
              hip_rotation: Math.abs(metrics.hip),
              knee_flexion: Math.abs(metrics.knee),
-             spine_angle: Math.abs(metrics.spine)
+             spine_angle: Math.abs(metrics.spine),
+             frames: framesRef.current.length > 0 ? framesRef.current : undefined,
            });
            setAiResult(result);
+           framesRef.current = [];
+           lastSampleMsRef.current = null;
        } catch (e) {
            console.error("Analysis submission failed", e);
        }
