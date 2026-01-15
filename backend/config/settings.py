@@ -149,6 +149,7 @@ STATIC_URL = "static/"
 
 # Media files (uploaded videos, feedback images/videos)
 MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 CELERY_BROKER_URL = 'memory://'
 CELERY_RESULT_BACKEND = 'cache+memory://'
 CELERY_ACCEPT_CONTENT = ['json']
