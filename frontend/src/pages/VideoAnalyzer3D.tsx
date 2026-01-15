@@ -28,6 +28,7 @@ export default function VideoAnalyzer3D() {
 
   // 1. WebSocket Connection with Auto-Reconnect
   const connectWebSocket = useCallback(function connectWebSocket() {
+      if (import.meta.env.VITE_E2E) return;
       if (socketRef.current?.readyState === WebSocket.OPEN) return;
 
       const ws = new WebSocket('ws://localhost:8001/ws/pose/');
@@ -67,6 +68,7 @@ export default function VideoAnalyzer3D() {
 
   // 1b. Load MediaPipe PoseLandmarker
   useEffect(() => {
+    if (import.meta.env.VITE_E2E) return;
     const createLandmarker = async () => {
       try {
         const vision = await FilesetResolver.forVisionTasks(
