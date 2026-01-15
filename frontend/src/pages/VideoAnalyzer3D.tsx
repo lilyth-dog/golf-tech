@@ -24,6 +24,7 @@ export default function VideoAnalyzer3D() {
   const analyzingRef = useRef(false);
   const framesRef = useRef<AnalysisFrame[]>([]);
   const lastSampleMsRef = useRef<number | null>(null);
+  const lastUiUpdateMsRef = useRef<number | null>(null);
 
   // 1. WebSocket Connection with Auto-Reconnect
   const connectWebSocket = useCallback(function connectWebSocket() {
@@ -97,7 +98,12 @@ export default function VideoAnalyzer3D() {
         if (result.landmarks && result.landmarks.length > 0) {
             drawLandmarks(result.landmarks[0] as NormalizedLandmark[]);
             const nextMetrics = calculateMetrics3D(result.worldLandmarks[0] as Landmark[]);
-            setWorldLandmarks(result.worldLandmarks[0] as Landmark[]);
+            // Throttle expensive state updates to keep UI smooth.
+            const lastUi = lastUiUpdateMsRef.current;
+            if (lastUi === null || timestampMs - lastUi >= 33) {
+              lastUiUpdateMsRef.current = timestampMs;
+              setWorldLandmarks(result.worldLandmarks[0] as Landmark[]);
+            }
 
             // Sample ~30fps to avoid huge payloads
             if (nextMetrics) {
@@ -217,6 +223,7 @@ export default function VideoAnalyzer3D() {
     try {
       framesRef.current = [];
       lastSampleMsRef.current = null;
+      lastUiUpdateMsRef.current = null;
       const constraints = { video: { width: 1280, height: 720 } };
       const s = await navigator.mediaDevices.getUserMedia(constraints);
       setStream(s);
@@ -246,6 +253,7 @@ export default function VideoAnalyzer3D() {
            setAiResult(result);
            framesRef.current = [];
            lastSampleMsRef.current = null;
+           lastUiUpdateMsRef.current = null;
        } catch (e) {
            console.error("Analysis submission failed", e);
        }
@@ -333,6 +341,39 @@ export default function VideoAnalyzer3D() {
                                  <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">MISTRAL-7B</span>
                              </div>
                              <p className="text-slate-300 text-sm leading-relaxed mb-4">{aiResult.ai_feedback}</p>
+
+                             {aiResult.evaluation && (
+                               <div className="mb-4 p-3 rounded-lg bg-slate-950 border border-slate-700">
+                                 <div className="flex items-center justify-between mb-2">
+                                   <span className="text-[10px] font-bold text-slate-500 tracking-wider">EVALUATION</span>
+                                   <span className="text-xs font-black text-emerald-400">
+                                     {aiResult.evaluation.overall_score.toFixed(0)}/100
+                                   </span>
+                                 </div>
+                                 <div className="grid grid-cols-3 gap-2 text-center">
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-500 font-bold">X-FACTOR</div>
+                                     <div className="text-sm font-black text-white">{aiResult.evaluation.components.x_factor_score.toFixed(0)}</div>
+                                   </div>
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-500 font-bold">TEMPO</div>
+                                     <div className="text-sm font-black text-white">{aiResult.evaluation.components.tempo_score.toFixed(0)}</div>
+                                   </div>
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-500 font-bold">POSTURE</div>
+                                     <div className="text-sm font-black text-white">{aiResult.evaluation.components.posture_score.toFixed(0)}</div>
+                                   </div>
+                                 </div>
+                                 {aiResult.evaluation.recommendations?.length > 0 && (
+                                   <ul className="mt-3 space-y-1 text-xs text-slate-300 list-disc list-inside">
+                                     {aiResult.evaluation.recommendations.slice(0, 3).map((r) => (
+                                       <li key={r}>{r}</li>
+                                     ))}
+                                   </ul>
+                                 )}
+                               </div>
+                             )}
+
                              <button onClick={() => setAiResult(null)} className="w-full py-2 border border-slate-600 text-slate-400 rounded-lg text-xs font-bold hover:bg-slate-700 hover:text-white transition">
                                 DISMISS
                              </button>

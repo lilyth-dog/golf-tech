@@ -12,6 +12,25 @@ export interface AnalysisResult {
     x_factor?: number;
     angular_momentum?: number;
     physics_score?: number;
+    swing_tempo_ratio?: number | null;
+    downswing_time_s?: number | null;
+    omega_peak?: number | null;
+    evaluation?: {
+        overall_score: number;
+        components: {
+            x_factor_score: number;
+            tempo_score: number;
+            posture_score: number;
+        };
+        inputs: {
+            x_factor: number;
+            swing_tempo_ratio: number;
+            knee_flexion: number | null;
+            spine_angle: number | null;
+        };
+        flags: string[];
+        recommendations: string[];
+    };
     feedback_image?: string;
     feedback_video?: string;
 }

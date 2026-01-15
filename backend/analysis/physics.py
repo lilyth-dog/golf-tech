@@ -124,3 +124,122 @@ class GolfPhysicsEngine:
         
         educational_momentum = moment_of_inertia * float(angular_velocity or 0.0)
         return educational_momentum
+
+    def analyze_frames(self, frames):
+        """
+        Analyze a list of frame dicts with keys:
+        - timestamp_ms
+        - shoulder_angle
+        - hip_rotation
+        - knee_flexion (optional)
+        - spine_angle (optional)
+
+        Returns:
+        {
+          "x_factor_peak": float,
+          "x_factor_end": float,
+          "swing_tempo_ratio": float,
+          "downswing_time_s": float,
+          "omega_peak": float,  # rad/s
+          "knee_end": float|None,
+          "spine_end": float|None,
+          "peak_idx": int,
+        }
+        """
+        if not frames or len(frames) < 3:
+            return None
+
+        # Sort by time to be robust against out-of-order frames.
+        fs = sorted(frames, key=lambda f: float(f.get("timestamp_ms", 0.0)))
+        ts = np.array([float(f["timestamp_ms"]) for f in fs], dtype=float)
+        sh = np.array([float(f["shoulder_angle"]) for f in fs], dtype=float)
+        hp = np.array([float(f["hip_rotation"]) for f in fs], dtype=float)
+
+        x = np.abs(sh - hp)
+        peak_idx = int(np.argmax(x))
+
+        t0 = ts[0]
+        t_peak = ts[peak_idx]
+        t_end = ts[-1]
+
+        backswing_ms = max(0.0, float(t_peak - t0))
+        downswing_ms = max(1.0, float(t_end - t_peak))
+        downswing_time_s = downswing_ms / 1000.0
+        swing_tempo_ratio = backswing_ms / downswing_ms if downswing_ms > 0 else 3.0
+
+        x_peak = float(x[peak_idx])
+        x_end = float(x[-1])
+
+        # Estimate omega from release during downswing: omega ≈ d(theta)/dt
+        # Use peak-to-end separation drop; clamp to avoid spikes from noisy end frames.
+        delta_deg = max(0.0, x_peak - x_end)
+        delta_deg = self._clamp(delta_deg, 0.0, 70.0)
+        dt = self._clamp(downswing_time_s, 0.20, 0.80)
+        omega_peak = (delta_deg * (np.pi / 180.0)) / dt
+
+        knee_end = fs[-1].get("knee_flexion")
+        spine_end = fs[-1].get("spine_angle")
+
+        return {
+            "x_factor_peak": x_peak,
+            "x_factor_end": x_end,
+            "swing_tempo_ratio": float(self._clamp(swing_tempo_ratio, 1.5, 5.0)),
+            "downswing_time_s": float(dt),
+            "omega_peak": float(omega_peak),
+            "knee_end": knee_end,
+            "spine_end": spine_end,
+            "peak_idx": peak_idx,
+        }
+
+    def build_evaluation(self, x_factor, swing_tempo_ratio, knee_flexion, spine_angle):
+        """
+        Return an evaluation breakdown for UI/AI prompt.
+        """
+        # Component scores (simple, interpretable)
+        tempo_penalty = self._range_penalty(swing_tempo_ratio, 2.5, 3.5, weight=20.0)  # ratio too far from ~3
+        tempo_score = self._clamp(100.0 - tempo_penalty, 0.0, 100.0)
+
+        x_penalty = self._range_penalty(x_factor, 30.0, 60.0, weight=2.0)
+        x_score = self._clamp(100.0 - x_penalty, 0.0, 100.0)
+
+        posture_penalty = self._range_penalty(knee_flexion, 20.0, 30.0, weight=2.0) + self._range_penalty(spine_angle, 35.0, 45.0, weight=2.0)
+        posture_score = self._clamp(100.0 - posture_penalty, 0.0, 100.0)
+
+        overall = self._clamp(0.4 * x_score + 0.35 * tempo_score + 0.25 * posture_score, 0.0, 100.0)
+
+        flags = []
+        if x_factor < 30:
+            flags.append("low_x_factor")
+        if swing_tempo_ratio < 2.5 or swing_tempo_ratio > 3.5:
+            flags.append("tempo_off")
+        if knee_flexion is not None and (knee_flexion < 20 or knee_flexion > 30):
+            flags.append("knee_out_of_range")
+        if spine_angle is not None and (spine_angle < 35 or spine_angle > 45):
+            flags.append("spine_out_of_range")
+
+        recommendations = []
+        if "low_x_factor" in flags:
+            recommendations.append("상체 회전을 늘리고 하체는 안정적으로 유지해 X-Factor(분리각)를 키우세요.")
+        if "tempo_off" in flags:
+            recommendations.append("백스윙을 더 천천히(리듬) 유지하고 다운스윙은 과도하게 급하지 않게 3:1 템포에 맞추세요.")
+        if "knee_out_of_range" in flags:
+            recommendations.append("무릎 굴곡을 20~30° 범위로 유지해 하체 안정성을 확보하세요.")
+        if "spine_out_of_range" in flags:
+            recommendations.append("척추 각도를 35~45° 범위로 유지해 자세 안정성을 확보하세요.")
+
+        return {
+            "overall_score": float(overall),
+            "components": {
+                "x_factor_score": float(x_score),
+                "tempo_score": float(tempo_score),
+                "posture_score": float(posture_score),
+            },
+            "inputs": {
+                "x_factor": float(x_factor),
+                "swing_tempo_ratio": float(swing_tempo_ratio),
+                "knee_flexion": knee_flexion,
+                "spine_angle": spine_angle,
+            },
+            "flags": flags,
+            "recommendations": recommendations,
+        }

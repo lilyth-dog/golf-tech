@@ -25,5 +25,35 @@ class AnalysisResultSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AnalysisResult
-        fields = ['id', 'created_at', 'video_url', 'shoulder_angle', 'hip_rotation', 'knee_flexion', 'spine_angle', 'frames', 'x_factor', 'angular_momentum', 'physics_score', 'ai_feedback', 'feedback_image', 'feedback_video']
-        read_only_fields = ['id', 'created_at', 'x_factor', 'angular_momentum', 'physics_score', 'ai_feedback']
+        fields = [
+            'id',
+            'created_at',
+            'video_url',
+            'shoulder_angle',
+            'hip_rotation',
+            'knee_flexion',
+            'spine_angle',
+            'frames',
+            'x_factor',
+            'angular_momentum',
+            'physics_score',
+            'swing_tempo_ratio',
+            'downswing_time_s',
+            'omega_peak',
+            'evaluation',
+            'ai_feedback',
+            'feedback_image',
+            'feedback_video',
+        ]
+        read_only_fields = [
+            'id',
+            'created_at',
+            'x_factor',
+            'angular_momentum',
+            'physics_score',
+            'swing_tempo_ratio',
+            'downswing_time_s',
+            'omega_peak',
+            'evaluation',
+            'ai_feedback',
+        ]
