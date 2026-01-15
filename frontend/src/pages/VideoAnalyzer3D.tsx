@@ -364,6 +364,52 @@ export default function VideoAnalyzer3D() {
                                      <div className="text-sm font-black text-white">{aiResult.evaluation.components.posture_score.toFixed(0)}</div>
                                    </div>
                                  </div>
+
+                                 <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-500 font-bold">RELEASE</div>
+                                     <div className="text-sm font-black text-white">
+                                       {(aiResult.evaluation.components.release_score ?? 0).toFixed(0)}
+                                     </div>
+                                   </div>
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-500 font-bold">SEQUENCE</div>
+                                     <div className="text-sm font-black text-white">
+                                       {(aiResult.evaluation.components.sequence_score ?? 0).toFixed(0)}
+                                     </div>
+                                   </div>
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-500 font-bold">ROT SPEED</div>
+                                     <div className="text-sm font-black text-white">
+                                       {(aiResult.evaluation.components.rotation_speed_score ?? 0).toFixed(0)}
+                                     </div>
+                                   </div>
+                                 </div>
+
+                                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-300">
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-500 font-bold mb-1">TEMPO / DOWNSWING</div>
+                                     <div className="flex justify-between">
+                                       <span>Tempo</span>
+                                       <span className="font-mono">{aiResult.evaluation.inputs.swing_tempo_ratio.toFixed(2)}</span>
+                                     </div>
+                                     <div className="flex justify-between">
+                                       <span>Downswing</span>
+                                       <span className="font-mono">{(aiResult.downswing_time_s ?? 0).toFixed(2)}s</span>
+                                     </div>
+                                   </div>
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-500 font-bold mb-1">RELEASE / SEQUENCE</div>
+                                     <div className="flex justify-between">
+                                       <span>Release</span>
+                                       <span className="font-mono">{(aiResult.evaluation.inputs.release_rate_rad_s ?? 0).toFixed(2)} rad/s</span>
+                                     </div>
+                                     <div className="flex justify-between">
+                                       <span>Lead</span>
+                                       <span className="font-mono">{(aiResult.evaluation.inputs.lead_ms ?? 0).toFixed(0)} ms</span>
+                                     </div>
+                                   </div>
+                                 </div>
                                  {aiResult.evaluation.recommendations?.length > 0 && (
                                    <ul className="mt-3 space-y-1 text-xs text-slate-300 list-disc list-inside">
                                      {aiResult.evaluation.recommendations.slice(0, 3).map((r) => (

@@ -21,15 +21,34 @@ export interface AnalysisResult {
             x_factor_score: number;
             tempo_score: number;
             posture_score: number;
+            rotation_speed_score?: number | null;
+            release_score?: number | null;
+            sequence_score?: number | null;
         };
         inputs: {
             x_factor: number;
             swing_tempo_ratio: number;
             knee_flexion: number | null;
             spine_angle: number | null;
+            release_rate_rad_s?: number | null;
+            release_deg?: number | null;
+            lead_ms?: number | null;
+            omega_x_peak?: number | null;
+            omega_shoulder_peak?: number | null;
+            omega_hip_peak?: number | null;
+            omega_x_avg?: number | null;
+            omega_shoulder_avg?: number | null;
+            omega_hip_avg?: number | null;
+            alpha_x_peak?: number | null;
+            alpha_shoulder_peak?: number | null;
+            alpha_hip_peak?: number | null;
         };
         flags: string[];
         recommendations: string[];
+        phases?: {
+            peak_idx?: number;
+            impact_idx?: number;
+        };
     };
     feedback_image?: string;
     feedback_video?: string;

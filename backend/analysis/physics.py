@@ -340,17 +340,52 @@ class GolfPhysicsEngine:
         posture_penalty = self._range_penalty(knee_flexion, 20.0, 30.0, weight=2.0) + self._range_penalty(spine_angle, 35.0, 45.0, weight=2.0)
         posture_score = self._clamp(100.0 - posture_penalty, 0.0, 100.0)
 
-        rotation_score = None
+        # Rotation/release/sequence scores (optional, computed when time-series is present)
+        release_score = None
         if release_rate_rad_s is not None:
             rr = float(release_rate_rad_s)
-            rot_penalty = self._range_penalty(rr, 2.0, 6.0, weight=25.0)
+            # Typical "good" window is heuristic; aim for a stable band.
+            rel_penalty = self._range_penalty(rr, 2.0, 6.0, weight=25.0)
+            release_score = float(self._clamp(100.0 - rel_penalty, 0.0, 100.0))
+
+        sequence_score = None
+        if lead_ms is not None:
+            # We want hip to lead shoulder: lead_ms >= 0, ideally ~20-120ms.
+            lm = float(lead_ms)
+            seq_penalty = self._range_penalty(lm, 0.0, 150.0, weight=0.6)
+            sequence_score = float(self._clamp(100.0 - seq_penalty, 0.0, 100.0))
+
+        rotation_score = None
+        # Keep a "rotation_speed_score" for continuity: combine peak speeds if provided.
+        if omega_shoulder_peak is not None and omega_hip_peak is not None:
+            o_sh = float(omega_shoulder_peak)
+            o_hip = float(omega_hip_peak)
+            # Penalize very low rotational speeds; cap penalty to keep bounded.
+            rot_penalty = self._range_penalty(o_sh, 2.0, 10.0, weight=4.0) + self._range_penalty(o_hip, 2.0, 10.0, weight=4.0)
             rotation_score = float(self._clamp(100.0 - rot_penalty, 0.0, 100.0))
 
-        # Weight rotation if available; otherwise distribute to existing components.
-        if rotation_score is None:
-            overall = self._clamp(0.45 * x_score + 0.35 * tempo_score + 0.20 * posture_score, 0.0, 100.0)
+        # Weight advanced components when available.
+        # Keep weights simple and stable for an MLP: users should feel results are consistent.
+        weights = {"x": 0.38, "tempo": 0.28, "posture": 0.20}
+        extra = []
+        if release_score is not None:
+            extra.append(("release", release_score))
+        if sequence_score is not None:
+            extra.append(("sequence", sequence_score))
+        if rotation_score is not None:
+            extra.append(("rotation", rotation_score))
+
+        if extra:
+            # Allocate up to 0.14 to extras, split evenly.
+            base_total = sum(weights.values())
+            extra_total = 1.0 - base_total
+            per = extra_total / float(len(extra))
+            overall = weights["x"] * x_score + weights["tempo"] * tempo_score + weights["posture"] * posture_score
+            for _, s in extra:
+                overall += per * s
+            overall = self._clamp(overall, 0.0, 100.0)
         else:
-            overall = self._clamp(0.35 * x_score + 0.30 * tempo_score + 0.20 * posture_score + 0.15 * rotation_score, 0.0, 100.0)
+            overall = self._clamp(0.45 * x_score + 0.35 * tempo_score + 0.20 * posture_score, 0.0, 100.0)
 
         flags = []
         if x_factor < 30:
@@ -387,6 +422,8 @@ class GolfPhysicsEngine:
                 "tempo_score": float(tempo_score),
                 "posture_score": float(posture_score),
                 "rotation_speed_score": rotation_score,
+                "release_score": release_score,
+                "sequence_score": sequence_score,
             },
             "inputs": {
                 "x_factor": float(x_factor),
