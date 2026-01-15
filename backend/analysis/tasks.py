@@ -87,9 +87,14 @@ def process_video_analysis(analysis_id):
         }
         # Compute physics metrics for this frame
         x_factor = engine.calculate_x_factor(pose['shoulder_angle'], pose['hip_rotation'])
-        estimated_velocity = x_factor * 5.0
-        angular_momentum = engine.estimate_angular_momentum(estimated_velocity, segment='trunk')
-        physics_score = engine.assess_impact_efficiency(wrist_angle=0, swing_tempo_ratio=3.0)
+        omega = engine.estimate_angular_velocity_from_x_factor(x_factor, swing_tempo_ratio=3.0)
+        angular_momentum = engine.estimate_angular_momentum(omega, segment='trunk')
+        physics_score = engine.assess_impact_efficiency(
+            wrist_angle=None,
+            swing_tempo_ratio=3.0,
+            knee_flexion=pose.get("knee_flexion"),
+            spine_angle=pose.get("spine_angle"),
+        )
         metrics_list.append({
             'x_factor': x_factor,
             'angular_momentum': angular_momentum,

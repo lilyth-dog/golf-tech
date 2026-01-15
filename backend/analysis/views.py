@@ -1,17 +1,11 @@
 from rest_framework import generics, permissions
-from rest_framework.response import Response
 from .models import AnalysisResult
 from .serializers import AnalysisResultSerializer, VideoUploadSerializer
 from rest_framework.parsers import MultiPartParser, FormParser
 from .tasks import process_video_analysis
 from core.models import UserProfile
-
-class AnalysisCreateView(generics.CreateAPIView):
-    serializer_class = AnalysisResultSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
 from .physics import GolfPhysicsEngine
-from .services import get_ai_feedback # Updated service function name
+from .services import get_ai_feedback
 
 class AnalysisCreateView(generics.CreateAPIView):
     serializer_class = AnalysisResultSerializer
@@ -39,13 +33,16 @@ class AnalysisCreateView(generics.CreateAPIView):
         # 4. Calculate Physics Metrics
         x_factor = engine.calculate_x_factor(analysis.shoulder_angle, analysis.hip_rotation)
         
-        # For MVP, we estimate angular velocity as a function of X-Factor (Elastic Recoil hypothesis)
-        # In a real video stream, we'd differentiate frame-by-frame. 
-        # Here we approximate: Higher X-factor -> Potential for higher velocity
-        estimated_velocity = x_factor * 5.0 # Arbitrary scalar for demo
-        angular_momentum = engine.estimate_angular_momentum(estimated_velocity, segment='trunk')
+        # Estimate angular velocity from X-Factor (heuristic; time series not available here).
+        omega = engine.estimate_angular_velocity_from_x_factor(x_factor, swing_tempo_ratio=3.0)
+        angular_momentum = engine.estimate_angular_momentum(omega, segment='trunk')
         
-        physics_score = engine.assess_impact_efficiency(wrist_angle=0, swing_tempo_ratio=3.0) # Ideal assumptions for single-frame
+        physics_score = engine.assess_impact_efficiency(
+            wrist_angle=None,
+            swing_tempo_ratio=3.0,
+            knee_flexion=analysis.knee_flexion,
+            spine_angle=analysis.spine_angle,
+        )
         
         # 5. Update Analysis Object
         analysis.x_factor = x_factor

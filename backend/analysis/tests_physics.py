@@ -15,7 +15,7 @@ class GolfPhysicsEngineTests(TestCase):
 
     def test_assess_impact_efficiency(self):
         # Perfect scenario
-        score = self.engine.assess_impact_efficiency(wrist_angle=5, swing_tempo_ratio=3.0)
+        score = self.engine.assess_impact_efficiency(wrist_angle=5, swing_tempo_ratio=3.0, knee_flexion=25, spine_angle=40)
         self.assertEqual(score, 100)
 
         # Casting scenario (wrist > 15)
@@ -27,6 +27,11 @@ class GolfPhysicsEngineTests(TestCase):
         # Tempo 4.0 -> deviation 1.0 -> penalty 10 -> 90
         score = self.engine.assess_impact_efficiency(wrist_angle=5, swing_tempo_ratio=4.0)
         self.assertEqual(score, 90)
+
+    def test_estimate_angular_velocity_from_x_factor(self):
+        omega = self.engine.estimate_angular_velocity_from_x_factor(45, swing_tempo_ratio=3.0)
+        self.assertTrue(omega > 0)
+        self.assertIsInstance(omega, float)
 
     def test_estimate_angular_momentum(self):
         # Just check it returns a positive float
