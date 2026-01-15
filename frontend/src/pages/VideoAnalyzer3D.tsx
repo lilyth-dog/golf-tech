@@ -347,22 +347,22 @@ export default function VideoAnalyzer3D() {
                              {aiResult.evaluation && (
                                <div className="mb-4 p-3 rounded-lg bg-slate-950 border border-slate-700">
                                  <div className="flex items-center justify-between mb-2">
-                                   <span className="text-[10px] font-bold text-slate-500 tracking-wider">EVALUATION</span>
+                                   <span className="text-[10px] font-bold text-slate-300 tracking-wider">EVALUATION</span>
                                    <span className="text-xs font-black text-emerald-400">
                                      {aiResult.evaluation.overall_score.toFixed(0)}/100
                                    </span>
                                  </div>
                                  <div className="grid grid-cols-3 gap-2 text-center">
                                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                                     <div className="text-[10px] text-slate-500 font-bold">X-FACTOR</div>
+                                     <div className="text-[10px] text-slate-300 font-bold">X-FACTOR</div>
                                      <div className="text-sm font-black text-white">{aiResult.evaluation.components.x_factor_score.toFixed(0)}</div>
                                    </div>
                                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                                     <div className="text-[10px] text-slate-500 font-bold">TEMPO</div>
+                                     <div className="text-[10px] text-slate-300 font-bold">TEMPO</div>
                                      <div className="text-sm font-black text-white">{aiResult.evaluation.components.tempo_score.toFixed(0)}</div>
                                    </div>
                                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                                     <div className="text-[10px] text-slate-500 font-bold">POSTURE</div>
+                                     <div className="text-[10px] text-slate-300 font-bold">POSTURE</div>
                                      <div className="text-sm font-black text-white">{aiResult.evaluation.components.posture_score.toFixed(0)}</div>
                                    </div>
                                  </div>
@@ -386,19 +386,19 @@ export default function VideoAnalyzer3D() {
 
                                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                                     <div className="text-[10px] text-slate-500 font-bold">RELEASE</div>
+                                     <div className="text-[10px] text-slate-300 font-bold">RELEASE</div>
                                      <div className="text-sm font-black text-white">
                                        {(aiResult.evaluation.components.release_score ?? 0).toFixed(0)}
                                      </div>
                                    </div>
                                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                                     <div className="text-[10px] text-slate-500 font-bold">SEQUENCE</div>
+                                     <div className="text-[10px] text-slate-300 font-bold">SEQUENCE</div>
                                      <div className="text-sm font-black text-white">
                                        {(aiResult.evaluation.components.sequence_score ?? 0).toFixed(0)}
                                      </div>
                                    </div>
                                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                                     <div className="text-[10px] text-slate-500 font-bold">ROT SPEED</div>
+                                     <div className="text-[10px] text-slate-300 font-bold">ROT SPEED</div>
                                      <div className="text-sm font-black text-white">
                                        {(aiResult.evaluation.components.rotation_speed_score ?? 0).toFixed(0)}
                                      </div>
@@ -407,7 +407,7 @@ export default function VideoAnalyzer3D() {
 
                                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-300">
                                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                                     <div className="text-[10px] text-slate-500 font-bold mb-1">TEMPO / DOWNSWING</div>
+                                     <div className="text-[10px] text-slate-300 font-bold mb-1">TEMPO / DOWNSWING</div>
                                      <div className="flex justify-between">
                                        <span>Tempo</span>
                                        <span className="font-mono">{aiResult.evaluation.inputs.swing_tempo_ratio.toFixed(2)}</span>
@@ -418,7 +418,7 @@ export default function VideoAnalyzer3D() {
                                      </div>
                                    </div>
                                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                                     <div className="text-[10px] text-slate-500 font-bold mb-1">RELEASE / SEQUENCE</div>
+                                     <div className="text-[10px] text-slate-300 font-bold mb-1">RELEASE / SEQUENCE</div>
                                      <div className="flex justify-between">
                                        <span>Release</span>
                                        <span className="font-mono">{(aiResult.evaluation.inputs.release_rate_rad_s ?? 0).toFixed(2)} rad/s</span>
@@ -491,17 +491,17 @@ function MetricCard({label, value, target, is3D}: {label: string, value: number,
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
             
             <div className="flex flex-col">
-                <span className="text-[10px] font-bold text-slate-500 tracking-wider mb-1">{label}</span>
+                <span className="text-[10px] font-bold text-slate-400 tracking-wider mb-1">{label}</span>
                 <div className="flex items-baseline gap-1">
                     <span className={`text-2xl font-black font-mono ${is3D ? 'text-blue-400' : 'text-white'}`}>
                         {value.toFixed(0)}
                     </span>
-                    <span className="text-xs text-slate-600 font-bold">{is3D ? 'cm' : '°'}</span>
+                    <span className="text-xs text-slate-300 font-bold">{is3D ? 'cm' : '°'}</span>
                 </div>
             </div>
             
             <div className="text-right flex flex-col items-end">
-                <span className="text-[10px] text-slate-600 uppercase">Target</span>
+                <span className="text-[10px] text-slate-300 uppercase">Target</span>
                 <span className="text-xs font-bold text-emerald-500">{target}</span>
             </div>
         </div>
@@ -528,14 +528,14 @@ function TargetRow({
   return (
     <div className="p-2 rounded bg-slate-900 border border-slate-800">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] font-bold text-slate-500">{label}</span>
+        <span className="text-[10px] font-bold text-slate-300">{label}</span>
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${badge}`}>
           {status.toUpperCase()}
         </span>
       </div>
       <div className="flex items-center justify-between text-slate-300">
         <span className="font-mono">{value === null ? 'N/A' : value.toFixed(2)}</span>
-        <span className="text-[10px] text-slate-500">
+        <span className="text-[10px] text-slate-300">
           {target.min.toFixed(0)}–{target.max.toFixed(0)} {target.unit}
         </span>
       </div>

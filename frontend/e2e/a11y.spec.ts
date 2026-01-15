@@ -30,3 +30,28 @@ test('home page a11y (authenticated)', async ({ page }) => {
   await expectNoSeriousA11yViolations(page);
 });
 
+test('profile page a11y (authenticated)', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('token', 'e2e-token'));
+  await page.goto('/profile');
+  await expect(page.getByText('My Profile')).toBeVisible();
+  await expectNoSeriousA11yViolations(page);
+});
+
+test('swing analysis page a11y (authenticated)', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('token', 'e2e-token'));
+  await page.goto('/swing-analysis');
+  await expect(page.getByText('🏌️ 스윙 영상 분석')).toBeVisible();
+  await expectNoSeriousA11yViolations(page);
+});
+
+test('analyze report a11y (authenticated)', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('token', 'e2e-token'));
+  await page.goto('/analyze');
+  await expect(page.getByText(/GOLF CENTRE/i)).toBeVisible();
+  await page.getByRole('button', { name: /INITIALIZE SCANNER/i }).click();
+  await expect(page.getByRole('button', { name: /GENERATE AI REPORT/i })).toBeVisible({ timeout: 10_000 });
+  await page.getByRole('button', { name: /GENERATE AI REPORT/i }).click();
+  await expect(page.getByText(/TODAY'S ONE THING/i)).toBeVisible();
+  await expectNoSeriousA11yViolations(page);
+});
+

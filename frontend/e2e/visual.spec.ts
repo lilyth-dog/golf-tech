@@ -34,3 +34,21 @@ test('analyze report visual', async ({ page }) => {
   await expect(page).toHaveScreenshot('analyze-report.png', { fullPage: true });
 });
 
+test('profile page visual (authenticated)', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('token', 'e2e-token');
+  });
+  await page.goto('/profile');
+  await expect(page.getByText('My Profile')).toBeVisible();
+  await expect(page).toHaveScreenshot('profile.png', { fullPage: true });
+});
+
+test('swing analysis page visual (authenticated)', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('token', 'e2e-token');
+  });
+  await page.goto('/swing-analysis');
+  await expect(page.getByText('🏌️ 스윙 영상 분석')).toBeVisible();
+  await expect(page).toHaveScreenshot('swing-analysis.png', { fullPage: true });
+});
+
