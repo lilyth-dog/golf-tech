@@ -70,6 +70,13 @@ class AnalysisCreateView(generics.CreateAPIView):
             omega_shoulder_peak=ts_result["omega_shoulder_peak"] if ts_result else None,
             omega_hip_peak=ts_result["omega_hip_peak"] if ts_result else None,
             omega_x_peak=ts_result["omega_x_peak"] if ts_result else None,
+            omega_shoulder_avg=ts_result["omega_shoulder_avg"] if ts_result else None,
+            omega_hip_avg=ts_result["omega_hip_avg"] if ts_result else None,
+            omega_x_avg=ts_result["omega_x_avg"] if ts_result else None,
+            alpha_shoulder_peak=ts_result["alpha_shoulder_peak"] if ts_result else None,
+            alpha_hip_peak=ts_result["alpha_hip_peak"] if ts_result else None,
+            alpha_x_peak=ts_result["alpha_x_peak"] if ts_result else None,
+            lead_ms=ts_result["lead_ms"] if ts_result else None,
             peak_idx=ts_result["peak_idx"] if ts_result else None,
             impact_idx=ts_result["impact_idx"] if ts_result else None,
         )

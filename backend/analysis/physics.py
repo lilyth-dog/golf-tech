@@ -188,16 +188,26 @@ class GolfPhysicsEngine:
         x_peak = float(x_deg_raw[peak_idx])
         x_end = float(x_deg_raw[-1])
 
-        # --- Impact (release minimum) detection ---
-        # Search for minimal separation after peak within a plausible window.
-        # Typical downswing ~0.2-0.6s; we use 0.05s to 0.8s as an envelope.
+        # --- Impact detection ---
+        # We use a 2-step approach:
+        # 1) Prefer the first point after peak where separation is "released enough"
+        #    (x <= max(15°, 35% of peak)) within a plausible window.
+        # 2) Fallback to minimal separation after peak within that window.
         min_after_ms = t_peak_ms + 50.0
         max_after_ms = min(t_peak_ms + 800.0, t_end_ms)
         after_mask = (ts >= min_after_ms) & (ts <= max_after_ms)
         after_idx = np.where(after_mask)[0]
+        impact_local = None
         if after_idx.size > 0:
-            impact_local = int(after_idx[np.argmin(x_deg_raw[after_idx])])
-        else:
+            # 1) release-complete threshold hit?
+            threshold_deg = max(15.0, 0.35 * x_peak)
+            hits = after_idx[x_deg_raw[after_idx] <= threshold_deg]
+            if hits.size > 0:
+                impact_local = int(hits[0])
+            else:
+                # 2) fallback: minimal separation in window
+                impact_local = int(after_idx[np.argmin(x_deg_raw[after_idx])])
+        if impact_local is None:
             # Fallback: minimal after peak, else last.
             if peak_idx < (len(x_deg_raw) - 1):
                 impact_local = int(peak_idx + np.argmin(x_deg_raw[peak_idx + 1 :]))
@@ -233,6 +243,32 @@ class GolfPhysicsEngine:
         omega_hip_peak = float(np.nanmax(np.abs(hp_omega[ds_slice]))) if hp_omega.size else 0.0
         omega_x_peak = float(np.nanmax(np.abs(x_omega[ds_slice]))) if x_omega.size else 0.0
 
+        # Peak indices within downswing window
+        omega_shoulder_peak_idx = int(ds_start + int(np.nanargmax(np.abs(sh_omega[ds_slice])))) if sh_omega.size else ds_start
+        omega_hip_peak_idx = int(ds_start + int(np.nanargmax(np.abs(hp_omega[ds_slice])))) if hp_omega.size else ds_start
+        omega_x_peak_idx = int(ds_start + int(np.nanargmax(np.abs(x_omega[ds_slice])))) if x_omega.size else ds_start
+
+        # Hip->Shoulder sequencing: positive means hip peaks earlier than shoulder.
+        lead_ms = float(ts[omega_shoulder_peak_idx] - ts[omega_hip_peak_idx])
+
+        # Averages for phase windows
+        omega_shoulder_avg = float(np.nanmean(np.abs(sh_omega[ds_slice]))) if sh_omega.size else 0.0
+        omega_hip_avg = float(np.nanmean(np.abs(hp_omega[ds_slice]))) if hp_omega.size else 0.0
+        omega_x_avg = float(np.nanmean(np.abs(x_omega[ds_slice]))) if x_omega.size else 0.0
+
+        # Angular accelerations (rad/s^2)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            sh_alpha = np.gradient(sh_omega, t_s)
+            hp_alpha = np.gradient(hp_omega, t_s)
+            x_alpha = np.gradient(x_omega, t_s)
+        sh_alpha = self._moving_average(sh_alpha, window=5)
+        hp_alpha = self._moving_average(hp_alpha, window=5)
+        x_alpha = self._moving_average(x_alpha, window=5)
+
+        alpha_shoulder_peak = float(np.nanmax(np.abs(sh_alpha[ds_slice]))) if sh_alpha.size else 0.0
+        alpha_hip_peak = float(np.nanmax(np.abs(hp_alpha[ds_slice]))) if hp_alpha.size else 0.0
+        alpha_x_peak = float(np.nanmax(np.abs(x_alpha[ds_slice]))) if x_alpha.size else 0.0
+
         # Release rate based on peak-to-impact separation change
         release_deg = max(0.0, x_peak - x_impact)
         release_dt_s = max(0.05, (t_impact_ms - t_peak_ms) / 1000.0)
@@ -254,7 +290,15 @@ class GolfPhysicsEngine:
             "omega_x_peak": omega_x_peak,
             "omega_shoulder_peak": omega_shoulder_peak,
             "omega_hip_peak": omega_hip_peak,
+            "omega_x_avg": omega_x_avg,
+            "omega_shoulder_avg": omega_shoulder_avg,
+            "omega_hip_avg": omega_hip_avg,
+            "alpha_x_peak": alpha_x_peak,
+            "alpha_shoulder_peak": alpha_shoulder_peak,
+            "alpha_hip_peak": alpha_hip_peak,
             "release_rate_rad_s": release_rate_rad_s,
+            "release_deg": float(release_deg),
+            "lead_ms": lead_ms,
             "knee_end": knee_end,
             "spine_end": spine_end,
             "peak_idx": peak_idx,
@@ -273,6 +317,13 @@ class GolfPhysicsEngine:
         omega_shoulder_peak=None,
         omega_hip_peak=None,
         omega_x_peak=None,
+        omega_shoulder_avg=None,
+        omega_hip_avg=None,
+        omega_x_avg=None,
+        alpha_shoulder_peak=None,
+        alpha_hip_peak=None,
+        alpha_x_peak=None,
+        lead_ms=None,
         peak_idx=None,
         impact_idx=None,
     ):
@@ -312,6 +363,8 @@ class GolfPhysicsEngine:
             flags.append("spine_out_of_range")
         if release_rate_rad_s is not None and float(release_rate_rad_s) < 2.0:
             flags.append("slow_release")
+        if lead_ms is not None and float(lead_ms) < 0:
+            flags.append("sequence_off")
 
         recommendations = []
         if "low_x_factor" in flags:
@@ -324,6 +377,8 @@ class GolfPhysicsEngine:
             recommendations.append("척추 각도를 35~45° 범위로 유지해 자세 안정성을 확보하세요.")
         if "slow_release" in flags:
             recommendations.append("다운스윙 구간에서 분리각 릴리즈(회전 가속)가 부족합니다. 하체 리드와 상체 지연(레이트 릴리즈) 드릴을 권장합니다.")
+        if "sequence_off" in flags:
+            recommendations.append("힙(하체) 회전 피크가 상체보다 늦게 나타납니다. 다운스윙 시작은 하체 리드 → 상체/팔이 따라오도록 시퀀스를 교정하세요.")
 
         evaluation = {
             "overall_score": float(overall),
@@ -342,6 +397,13 @@ class GolfPhysicsEngine:
                 "omega_x_peak": omega_x_peak,
                 "omega_shoulder_peak": omega_shoulder_peak,
                 "omega_hip_peak": omega_hip_peak,
+                "omega_x_avg": omega_x_avg,
+                "omega_shoulder_avg": omega_shoulder_avg,
+                "omega_hip_avg": omega_hip_avg,
+                "alpha_x_peak": alpha_x_peak,
+                "alpha_shoulder_peak": alpha_shoulder_peak,
+                "alpha_hip_peak": alpha_hip_peak,
+                "lead_ms": lead_ms,
             },
             "flags": flags,
             "recommendations": recommendations,
