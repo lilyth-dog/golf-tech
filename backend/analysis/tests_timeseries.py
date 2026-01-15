@@ -32,3 +32,9 @@ class AnalysisTimeSeriesTests(TestCase):
         self.assertAlmostEqual(float(data["x_factor"]), 50.0, delta=0.01)
         self.assertIn("physics_score", data)
         self.assertIn("angular_momentum", data)
+        self.assertIn("evaluation", data)
+        self.assertIn("components", data["evaluation"])
+        self.assertIn("rotation_speed_score", data["evaluation"]["components"])
+        # Should have time-series derived fields
+        self.assertIsNotNone(data.get("omega_peak"))
+        self.assertIsNotNone(data.get("downswing_time_s"))

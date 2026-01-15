@@ -40,6 +40,25 @@ class GolfPhysicsEngine:
         if value > hi:
             return (value - hi) * weight
         return 0.0
+
+    @staticmethod
+    def _moving_average(values, window=5):
+        """
+        Simple moving average with edge padding.
+        """
+        arr = np.asarray(values, dtype=float)
+        if arr.size == 0:
+            return arr
+        w = int(window or 1)
+        if w <= 1 or arr.size < 3:
+            return arr
+        w = min(w, int(arr.size))
+        kernel = np.ones(w, dtype=float) / float(w)
+        # Pad with edge values to avoid shrinking.
+        pad = w // 2
+        padded = np.pad(arr, (pad, pad), mode="edge")
+        smoothed = np.convolve(padded, kernel, mode="valid")
+        return smoothed
         
     def calculate_x_factor(self, shoulder_angle, hip_angle):
         """
@@ -134,17 +153,7 @@ class GolfPhysicsEngine:
         - knee_flexion (optional)
         - spine_angle (optional)
 
-        Returns:
-        {
-          "x_factor_peak": float,
-          "x_factor_end": float,
-          "swing_tempo_ratio": float,
-          "downswing_time_s": float,
-          "omega_peak": float,  # rad/s
-          "knee_end": float|None,
-          "spine_end": float|None,
-          "peak_idx": int,
-        }
+        Returns a dict with phase indices and kinematic estimates.
         """
         if not frames or len(frames) < 3:
             return None
@@ -152,30 +161,84 @@ class GolfPhysicsEngine:
         # Sort by time to be robust against out-of-order frames.
         fs = sorted(frames, key=lambda f: float(f.get("timestamp_ms", 0.0)))
         ts = np.array([float(f["timestamp_ms"]) for f in fs], dtype=float)
-        sh = np.array([float(f["shoulder_angle"]) for f in fs], dtype=float)
-        hp = np.array([float(f["hip_rotation"]) for f in fs], dtype=float)
+        # Convert ms -> seconds for derivatives.
+        t_s = (ts - ts[0]) / 1000.0
 
-        x = np.abs(sh - hp)
-        peak_idx = int(np.argmax(x))
+        sh_deg = np.array([float(f["shoulder_angle"]) for f in fs], dtype=float)
+        hp_deg = np.array([float(f["hip_rotation"]) for f in fs], dtype=float)
 
-        t0 = ts[0]
-        t_peak = ts[peak_idx]
-        t_end = ts[-1]
+        # Smooth raw angles before differentiation (basic noise suppression).
+        sh_deg_s = self._moving_average(sh_deg, window=5)
+        hp_deg_s = self._moving_average(hp_deg, window=5)
 
-        backswing_ms = max(0.0, float(t_peak - t0))
-        downswing_ms = max(1.0, float(t_end - t_peak))
+        x_deg = np.abs(sh_deg_s - hp_deg_s)
+        peak_idx = int(np.argmax(x_deg))
+
+        t0_ms = float(ts[0])
+        t_peak_ms = float(ts[peak_idx])
+        t_end_ms = float(ts[-1])
+
+        backswing_ms = max(0.0, float(t_peak_ms - t0_ms))
+        downswing_ms = max(1.0, float(t_end_ms - t_peak_ms))
         downswing_time_s = downswing_ms / 1000.0
         swing_tempo_ratio = backswing_ms / downswing_ms if downswing_ms > 0 else 3.0
 
-        x_peak = float(x[peak_idx])
-        x_end = float(x[-1])
+        x_peak = float(x_deg[peak_idx])
+        x_end = float(x_deg[-1])
 
-        # Estimate omega from release during downswing: omega ≈ d(theta)/dt
-        # Use peak-to-end separation drop; clamp to avoid spikes from noisy end frames.
-        delta_deg = max(0.0, x_peak - x_end)
-        delta_deg = self._clamp(delta_deg, 0.0, 70.0)
-        dt = self._clamp(downswing_time_s, 0.20, 0.80)
-        omega_peak = (delta_deg * (np.pi / 180.0)) / dt
+        # --- Impact (release minimum) detection ---
+        # Search for minimal separation after peak within a plausible window.
+        # Typical downswing ~0.2-0.6s; we use 0.05s to 0.8s as an envelope.
+        min_after_ms = t_peak_ms + 50.0
+        max_after_ms = min(t_peak_ms + 800.0, t_end_ms)
+        after_mask = (ts >= min_after_ms) & (ts <= max_after_ms)
+        after_idx = np.where(after_mask)[0]
+        if after_idx.size > 0:
+            impact_local = int(after_idx[np.argmin(x_deg[after_idx])])
+        else:
+            # Fallback: minimal after peak, else last.
+            if peak_idx < (len(x_deg) - 1):
+                impact_local = int(peak_idx + np.argmin(x_deg[peak_idx + 1 :]))
+            else:
+                impact_local = int(len(x_deg) - 1)
+        impact_idx = int(self._clamp(impact_local, peak_idx, len(x_deg) - 1))
+
+        x_impact = float(x_deg[impact_idx])
+        t_impact_ms = float(ts[impact_idx])
+
+        # --- Angular velocities (rad/s) ---
+        # Use numerical derivative with uneven time base; then smooth.
+        sh_rad = sh_deg_s * (np.pi / 180.0)
+        hp_rad = hp_deg_s * (np.pi / 180.0)
+        x_rad = x_deg * (np.pi / 180.0)
+
+        # np.gradient handles uneven spacing when provided with time.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            sh_omega = np.gradient(sh_rad, t_s)
+            hp_omega = np.gradient(hp_rad, t_s)
+            x_omega = np.gradient(x_rad, t_s)
+
+        sh_omega = self._moving_average(sh_omega, window=5)
+        hp_omega = self._moving_average(hp_omega, window=5)
+        x_omega = self._moving_average(x_omega, window=5)
+
+        # Down/impact window indices: from peak -> impact (inclusive)
+        ds_start = peak_idx
+        ds_end = impact_idx if impact_idx > peak_idx else min(len(x_deg) - 1, peak_idx + 1)
+        ds_slice = slice(ds_start, ds_end + 1)
+
+        omega_shoulder_peak = float(np.nanmax(np.abs(sh_omega[ds_slice]))) if sh_omega.size else 0.0
+        omega_hip_peak = float(np.nanmax(np.abs(hp_omega[ds_slice]))) if hp_omega.size else 0.0
+        omega_x_peak = float(np.nanmax(np.abs(x_omega[ds_slice]))) if x_omega.size else 0.0
+
+        # Release rate based on peak-to-impact separation change
+        release_deg = max(0.0, x_peak - x_impact)
+        release_dt_s = max(0.05, (t_impact_ms - t_peak_ms) / 1000.0)
+        release_rate_rad_s = float((release_deg * (np.pi / 180.0)) / release_dt_s)
+
+        # Clamp derived times/ratios into a realistic envelope for stability.
+        dt = self._clamp((t_impact_ms - t_peak_ms) / 1000.0, 0.20, 0.80)
+        swing_tempo_ratio = float(self._clamp(swing_tempo_ratio, 1.5, 5.0))
 
         knee_end = fs[-1].get("knee_flexion")
         spine_end = fs[-1].get("spine_angle")
@@ -183,15 +246,34 @@ class GolfPhysicsEngine:
         return {
             "x_factor_peak": x_peak,
             "x_factor_end": x_end,
-            "swing_tempo_ratio": float(self._clamp(swing_tempo_ratio, 1.5, 5.0)),
+            "x_factor_impact": x_impact,
+            "swing_tempo_ratio": swing_tempo_ratio,
             "downswing_time_s": float(dt),
-            "omega_peak": float(omega_peak),
+            "omega_x_peak": omega_x_peak,
+            "omega_shoulder_peak": omega_shoulder_peak,
+            "omega_hip_peak": omega_hip_peak,
+            "release_rate_rad_s": release_rate_rad_s,
             "knee_end": knee_end,
             "spine_end": spine_end,
             "peak_idx": peak_idx,
+            "impact_idx": impact_idx,
+            "t_peak_ms": t_peak_ms,
+            "t_impact_ms": t_impact_ms,
         }
 
-    def build_evaluation(self, x_factor, swing_tempo_ratio, knee_flexion, spine_angle):
+    def build_evaluation(
+        self,
+        x_factor,
+        swing_tempo_ratio,
+        knee_flexion,
+        spine_angle,
+        release_rate_rad_s=None,
+        omega_shoulder_peak=None,
+        omega_hip_peak=None,
+        omega_x_peak=None,
+        peak_idx=None,
+        impact_idx=None,
+    ):
         """
         Return an evaluation breakdown for UI/AI prompt.
         """
@@ -205,7 +287,17 @@ class GolfPhysicsEngine:
         posture_penalty = self._range_penalty(knee_flexion, 20.0, 30.0, weight=2.0) + self._range_penalty(spine_angle, 35.0, 45.0, weight=2.0)
         posture_score = self._clamp(100.0 - posture_penalty, 0.0, 100.0)
 
-        overall = self._clamp(0.4 * x_score + 0.35 * tempo_score + 0.25 * posture_score, 0.0, 100.0)
+        rotation_score = None
+        if release_rate_rad_s is not None:
+            rr = float(release_rate_rad_s)
+            rot_penalty = self._range_penalty(rr, 2.0, 6.0, weight=25.0)
+            rotation_score = float(self._clamp(100.0 - rot_penalty, 0.0, 100.0))
+
+        # Weight rotation if available; otherwise distribute to existing components.
+        if rotation_score is None:
+            overall = self._clamp(0.45 * x_score + 0.35 * tempo_score + 0.20 * posture_score, 0.0, 100.0)
+        else:
+            overall = self._clamp(0.35 * x_score + 0.30 * tempo_score + 0.20 * posture_score + 0.15 * rotation_score, 0.0, 100.0)
 
         flags = []
         if x_factor < 30:
@@ -216,6 +308,8 @@ class GolfPhysicsEngine:
             flags.append("knee_out_of_range")
         if spine_angle is not None and (spine_angle < 35 or spine_angle > 45):
             flags.append("spine_out_of_range")
+        if release_rate_rad_s is not None and float(release_rate_rad_s) < 2.0:
+            flags.append("slow_release")
 
         recommendations = []
         if "low_x_factor" in flags:
@@ -226,20 +320,30 @@ class GolfPhysicsEngine:
             recommendations.append("무릎 굴곡을 20~30° 범위로 유지해 하체 안정성을 확보하세요.")
         if "spine_out_of_range" in flags:
             recommendations.append("척추 각도를 35~45° 범위로 유지해 자세 안정성을 확보하세요.")
+        if "slow_release" in flags:
+            recommendations.append("다운스윙 구간에서 분리각 릴리즈(회전 가속)가 부족합니다. 하체 리드와 상체 지연(레이트 릴리즈) 드릴을 권장합니다.")
 
-        return {
+        evaluation = {
             "overall_score": float(overall),
             "components": {
                 "x_factor_score": float(x_score),
                 "tempo_score": float(tempo_score),
                 "posture_score": float(posture_score),
+                "rotation_speed_score": rotation_score,
             },
             "inputs": {
                 "x_factor": float(x_factor),
                 "swing_tempo_ratio": float(swing_tempo_ratio),
                 "knee_flexion": knee_flexion,
                 "spine_angle": spine_angle,
+                "release_rate_rad_s": release_rate_rad_s,
+                "omega_x_peak": omega_x_peak,
+                "omega_shoulder_peak": omega_shoulder_peak,
+                "omega_hip_peak": omega_hip_peak,
             },
             "flags": flags,
             "recommendations": recommendations,
         }
+        if peak_idx is not None or impact_idx is not None:
+            evaluation["phases"] = {"peak_idx": peak_idx, "impact_idx": impact_idx}
+        return evaluation

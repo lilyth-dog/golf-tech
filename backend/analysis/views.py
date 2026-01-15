@@ -46,7 +46,7 @@ class AnalysisCreateView(generics.CreateAPIView):
             x_factor = ts_result["x_factor_peak"]
             swing_tempo_ratio = ts_result["swing_tempo_ratio"]
             downswing_time_s = ts_result["downswing_time_s"]
-            omega_peak = ts_result["omega_peak"]
+            omega_peak = ts_result["omega_x_peak"]
 
         angular_momentum = engine.estimate_angular_momentum(omega_peak, segment='trunk')
         
@@ -66,6 +66,12 @@ class AnalysisCreateView(generics.CreateAPIView):
             swing_tempo_ratio=swing_tempo_ratio,
             knee_flexion=last_knee if last_knee is not None else analysis.knee_flexion,
             spine_angle=last_spine if last_spine is not None else analysis.spine_angle,
+            release_rate_rad_s=ts_result["release_rate_rad_s"] if ts_result else None,
+            omega_shoulder_peak=ts_result["omega_shoulder_peak"] if ts_result else None,
+            omega_hip_peak=ts_result["omega_hip_peak"] if ts_result else None,
+            omega_x_peak=ts_result["omega_x_peak"] if ts_result else None,
+            peak_idx=ts_result["peak_idx"] if ts_result else None,
+            impact_idx=ts_result["impact_idx"] if ts_result else None,
         )
         
         # 5. Update Analysis Object
