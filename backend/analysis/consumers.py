@@ -37,14 +37,18 @@ class PoseConsumer(AsyncWebsocketConsumer):
                     'data': data
                 }
             )
-        except Exception as e:
-            pass
+        except Exception:
+            # Ignore malformed payloads to keep stream alive.
+            return
+
+    async def pose_update(self, event):
+        """
+        Handler for group messages of type 'pose_update'.
+        This forwards the received pose payload back to connected clients.
+        """
+        await self.send(text_data=json.dumps(event.get('data', {})))
 
     # Handler for group messages
     async def analysis_complete(self, event):
         # Forward analysis completion data (feedback URLs) to client
-        await self.send(text_data=json.dumps(event['data']))
-
-        data = event['data']
-        # Forward back to client (echo)
-        await self.send(text_data=json.dumps(data))
+        await self.send(text_data=json.dumps(event.get('data', {})))

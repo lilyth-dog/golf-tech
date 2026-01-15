@@ -10,8 +10,8 @@ class GolfPhysicsEngineTests(TestCase):
         self.assertEqual(self.engine.calculate_x_factor(90, 45), 45)
         # Check absolute values
         self.assertEqual(self.engine.calculate_x_factor(-90, -45), 45)
-        # Shoulder < Hip (Unlikely but mathematically possible)
-        self.assertEqual(self.engine.calculate_x_factor(30, 45), -15)
+        # Shoulder < Hip (Unlikely but mathematically possible) -> separation should still be positive.
+        self.assertEqual(self.engine.calculate_x_factor(30, 45), 15)
 
     def test_assess_impact_efficiency(self):
         # Perfect scenario

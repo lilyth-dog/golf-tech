@@ -28,8 +28,9 @@ class GolfPhysicsEngine:
         X-Factor: The separation between shoulder and hip rotation.
         Key for power generation (Elastic potential energy).
         """
-        # Ensure we are dealing with magnitudes appropriately
-        return abs(shoulder_angle) - abs(hip_angle)
+        # X-Factor is the separation between the two rotations, not the difference of magnitudes.
+        # Using abs(|a| - |b|) can undercount and can even go negative depending on usage elsewhere.
+        return abs(shoulder_angle - hip_angle)
 
     def assess_impact_efficiency(self, wrist_angle, swing_tempo_ratio):
         """
