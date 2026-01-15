@@ -40,6 +40,7 @@ const VideoUploader: React.FC<VideoUploaderProps> = ({ onUploadComplete }) => {
             setFile(null);
             setPreview(null);
         } catch (err) {
+            console.error(err);
             setError('업로드에 실패했습니다. 다시 시도해주세요.');
         } finally {
             setUploading(false);

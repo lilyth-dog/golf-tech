@@ -18,7 +18,7 @@ export default function LoginPage() {
       const response = await login(formData);
       localStorage.setItem('token', response.token);
       navigate('/');
-    } catch (err) {
+    } catch {
       setError('Invalid credentials');
     } finally {
       setLoading(false);

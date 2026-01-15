@@ -18,7 +18,7 @@ export default function RegisterPage() {
       await register(formData);
       // Auto login or redirect to login? Let's redirect to login for simplicity
       navigate('/login');
-    } catch (err) {
+    } catch {
       setError('Registration failed. Username might be taken.');
     } finally {
       setLoading(false);

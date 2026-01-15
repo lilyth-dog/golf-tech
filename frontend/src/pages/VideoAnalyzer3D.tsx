@@ -6,13 +6,21 @@ import { createAnalysis } from '../api/analysis';
 import type { AnalysisResult } from '../api/analysis';
 import SwingCanvas from '../components/SwingCanvas';
 
+type PosePoint3D = {
+  x: number;
+  y: number;
+  z: number;
+  visibility?: number;
+  presence?: number;
+};
+
 export default function VideoAnalyzer3D() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [landmarker, setLandmarker] = useState<PoseLandmarker | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [metrics, setMetrics] = useState({ shoulder: 0, hip: 0, knee: 0, spine: 0, handZ: 0 });
-  const [worldLandmarks, setWorldLandmarks] = useState<any[]>([]);
+  const [worldLandmarks, setWorldLandmarks] = useState<PosePoint3D[]>([]);
   const [aiResult, setAiResult] = useState<AnalysisResult | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
@@ -20,9 +28,10 @@ export default function VideoAnalyzer3D() {
   const requestRef = useRef<number>(0);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const analyzingRef = useRef(false);
 
   // 1. WebSocket Connection with Auto-Reconnect
-  const connectWebSocket = useCallback(() => {
+  const connectWebSocket = useCallback(function connectWebSocket() {
       if (socketRef.current?.readyState === WebSocket.OPEN) return;
 
       const ws = new WebSocket('ws://localhost:8001/ws/pose/');
@@ -56,6 +65,10 @@ export default function VideoAnalyzer3D() {
       }
   }, [connectWebSocket]);
 
+  useEffect(() => {
+    analyzingRef.current = analyzing;
+  }, [analyzing]);
+
   // 1b. Load MediaPipe PoseLandmarker
   useEffect(() => {
     const createLandmarker = async () => {
@@ -80,23 +93,21 @@ export default function VideoAnalyzer3D() {
   }, []);
 
   // 2. Frame Processing Loop
-  const predictWebcam = () => {
+  const predictWebcam = useCallback(function predictWebcam(timestampMs: number) {
     if (!landmarker || !videoRef.current || !canvasRef.current) return;
-    
-    let startTimeMs = performance.now();
-    
+
     if (videoRef.current.videoWidth > 0) {
-        const result = landmarker.detectForVideo(videoRef.current, startTimeMs);
+        const result = landmarker.detectForVideo(videoRef.current, timestampMs);
         
         if (result.landmarks && result.landmarks.length > 0) {
-            drawLandmarks(result.landmarks[0]);
-            calculateMetrics3D(result.worldLandmarks[0]); 
-            setWorldLandmarks(result.worldLandmarks[0]);
+            drawLandmarks(result.landmarks[0] as PosePoint3D[]);
+            calculateMetrics3D(result.worldLandmarks[0] as PosePoint3D[]); 
+            setWorldLandmarks(result.worldLandmarks[0] as PosePoint3D[]);
             
             // Stream to Backend -> Unreal
             if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
                 const packet = {
-                    timestamp: startTimeMs,
+                    timestamp: timestampMs,
                     landmarks: result.worldLandmarks[0]
                 };
                 socketRef.current.send(JSON.stringify(packet));
@@ -104,24 +115,24 @@ export default function VideoAnalyzer3D() {
         }
     }
 
-    if (analyzing) {
+    if (analyzingRef.current) {
         requestRef.current = requestAnimationFrame(predictWebcam);
     }
-  };
+  }, [landmarker]);
 
   useEffect(() => {
       if (analyzing && landmarker) {
-          predictWebcam();
+          requestRef.current = requestAnimationFrame(predictWebcam);
       } else {
           if (requestRef.current) cancelAnimationFrame(requestRef.current);
       }
       return () => {
          if (requestRef.current) cancelAnimationFrame(requestRef.current);
       }
-  }, [analyzing, landmarker]);
+  }, [analyzing, landmarker, predictWebcam]);
 
   // 3. Drawing (2D Overlay)
-  const drawLandmarks = (landmarks: any[]) => {
+  const drawLandmarks = (landmarks: PosePoint3D[]) => {
       const ctx = canvasRef.current?.getContext('2d');
       if (!ctx || !canvasRef.current) return;
       
@@ -148,7 +159,7 @@ export default function VideoAnalyzer3D() {
   };
 
   // 4. Metrics Calculation
-  const calculateMetrics3D = (landmarks: any[]) => {
+  const calculateMetrics3D = (landmarks: PosePoint3D[]) => {
       // 11=LeftShoulder, 12=RightShoulder, 23=LeftHip, 24=RightHip, 25=LeftKnee, 27=LeftAnkle, 16=RightWrist
       const leftShoulder = landmarks[11];
       const rightShoulder = landmarks[12];
@@ -161,7 +172,7 @@ export default function VideoAnalyzer3D() {
       if (!leftShoulder || !rightHip) return;
 
       const handZ = rightWrist.z * 100;
-      const toPoint = (lm: any) => ({ position: { x: lm.x, y: lm.y } });
+      const toPoint = (lm: PosePoint3D) => ({ position: { x: lm.x, y: lm.y } });
 
       const shoulderAng = calculateAngle(
               { position: { x: leftShoulder.x, y: leftShoulder.y - 1 } }, // Vertical
