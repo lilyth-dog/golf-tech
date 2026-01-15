@@ -9,6 +9,14 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:5173',
     trace: 'retain-on-failure',
+    viewport: { width: 1280, height: 720 },
+    colorScheme: 'light',
+    reducedMotion: 'reduce',
+  },
+  expect: {
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.01,
+    },
   },
   projects: [
     {
