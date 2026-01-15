@@ -365,6 +365,23 @@ export default function VideoAnalyzer3D() {
                                    </div>
                                  </div>
 
+                                 {aiResult.evaluation.primary_recommendation && (
+                                   <div className="mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+                                     <div className="text-[10px] font-bold text-emerald-400 tracking-wider mb-1">
+                                       TODAY'S ONE THING
+                                     </div>
+                                     <div className="text-sm font-black text-white mb-1">
+                                       {aiResult.evaluation.primary_recommendation.title}
+                                     </div>
+                                     <div className="text-xs text-slate-300 mb-2">
+                                       {aiResult.evaluation.primary_recommendation.reason}
+                                     </div>
+                                     <div className="text-xs text-slate-200 leading-relaxed">
+                                       {aiResult.evaluation.primary_recommendation.drill}
+                                     </div>
+                                   </div>
+                                 )}
+
                                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
                                      <div className="text-[10px] text-slate-500 font-bold">RELEASE</div>
@@ -410,6 +427,31 @@ export default function VideoAnalyzer3D() {
                                      </div>
                                    </div>
                                  </div>
+
+                                 {aiResult.evaluation.targets && (
+                                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                     <TargetRow
+                                       label="X-Factor"
+                                       value={aiResult.evaluation.inputs.x_factor}
+                                       target={aiResult.evaluation.targets.x_factor_deg as any}
+                                     />
+                                     <TargetRow
+                                       label="Tempo"
+                                       value={aiResult.evaluation.inputs.swing_tempo_ratio}
+                                       target={aiResult.evaluation.targets.tempo_ratio as any}
+                                     />
+                                     <TargetRow
+                                       label="Release"
+                                       value={aiResult.evaluation.inputs.release_rate_rad_s ?? null}
+                                       target={aiResult.evaluation.targets.release_rate_rad_s as any}
+                                     />
+                                     <TargetRow
+                                       label="Lead"
+                                       value={aiResult.evaluation.inputs.lead_ms ?? null}
+                                       target={aiResult.evaluation.targets.lead_ms as any}
+                                     />
+                                   </div>
+                                 )}
                                  {aiResult.evaluation.recommendations?.length > 0 && (
                                    <ul className="mt-3 space-y-1 text-xs text-slate-300 list-disc list-inside">
                                      {aiResult.evaluation.recommendations.slice(0, 3).map((r) => (
@@ -462,4 +504,48 @@ function MetricCard({label, value, target, is3D}: {label: string, value: number,
             </div>
         </div>
     )
+}
+
+function TargetRow({
+  label,
+  value,
+  target,
+}: {
+  label: string;
+  value: number | null;
+  target: { min: number; max: number; unit: string };
+}) {
+  const status = getRangeStatus(value, target.min, target.max);
+  const badge =
+    status === 'good'
+      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+      : status === 'warn'
+        ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'
+        : 'bg-red-500/10 border-red-500/30 text-red-300';
+
+  return (
+    <div className="p-2 rounded bg-slate-900 border border-slate-800">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[10px] font-bold text-slate-500">{label}</span>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${badge}`}>
+          {status.toUpperCase()}
+        </span>
+      </div>
+      <div className="flex items-center justify-between text-slate-300">
+        <span className="font-mono">{value === null ? 'N/A' : value.toFixed(2)}</span>
+        <span className="text-[10px] text-slate-500">
+          {target.min.toFixed(0)}–{target.max.toFixed(0)} {target.unit}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function getRangeStatus(value: number | null, min: number, max: number): 'good' | 'warn' | 'bad' {
+  if (value === null || Number.isNaN(value)) return 'bad';
+  if (value >= min && value <= max) return 'good';
+  const span = Math.max(1e-6, max - min);
+  const dist = value < min ? (min - value) : (value - max);
+  // within 20% of the range width => warn, else bad
+  return dist <= 0.2 * span ? 'warn' : 'bad';
 }

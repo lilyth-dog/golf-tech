@@ -330,6 +330,16 @@ class GolfPhysicsEngine:
         """
         Return an evaluation breakdown for UI/AI prompt.
         """
+        # Targets/ranges shown to users (MLP: make it obvious what "good" is)
+        targets = {
+            "x_factor_deg": {"min": 30.0, "max": 60.0, "unit": "deg"},
+            "tempo_ratio": {"min": 2.5, "max": 3.5, "unit": "ratio"},
+            "knee_flexion_deg": {"min": 20.0, "max": 30.0, "unit": "deg"},
+            "spine_angle_deg": {"min": 35.0, "max": 45.0, "unit": "deg"},
+            "release_rate_rad_s": {"min": 2.0, "max": 6.0, "unit": "rad/s"},
+            "lead_ms": {"min": 0.0, "max": 150.0, "unit": "ms"},
+        }
+
         # Component scores (simple, interpretable)
         tempo_penalty = self._range_penalty(swing_tempo_ratio, 2.5, 3.5, weight=20.0)  # ratio too far from ~3
         tempo_score = self._clamp(100.0 - tempo_penalty, 0.0, 100.0)
@@ -415,6 +425,49 @@ class GolfPhysicsEngine:
         if "sequence_off" in flags:
             recommendations.append("힙(하체) 회전 피크가 상체보다 늦게 나타납니다. 다운스윙 시작은 하체 리드 → 상체/팔이 따라오도록 시퀀스를 교정하세요.")
 
+        # Pick the single most important action (MLP: "오늘의 1개")
+        primary = None
+        if "sequence_off" in flags:
+            primary = {
+                "title": "오늘의 1개: 하체 리드 시퀀스",
+                "reason": "힙 피크가 상체보다 늦게 나타났습니다(시퀀스 불일치).",
+                "drill": "스텝 드릴(왼발 스텝 후 다운스윙)로 하체 리드를 먼저 만들고, 상체/팔은 따라오게 연습하세요.",
+                "metric": "lead_ms",
+                "target": targets["lead_ms"],
+            }
+        elif "slow_release" in flags:
+            primary = {
+                "title": "오늘의 1개: 릴리즈(회전 가속) 만들기",
+                "reason": "다운스윙 구간에서 릴리즈 속도가 낮습니다.",
+                "drill": "펌프 드릴(탑→중간 다운스윙 반복)로 하체 리드+상체 지연을 느끼고, 마지막에 릴리즈를 연결하세요.",
+                "metric": "release_rate_rad_s",
+                "target": targets["release_rate_rad_s"],
+            }
+        elif "low_x_factor" in flags:
+            primary = {
+                "title": "오늘의 1개: X-Factor(분리각) 키우기",
+                "reason": "상체-하체 분리각이 낮습니다.",
+                "drill": "어드레스에서 하체 고정(가벼운 밴드/의자) 후 상체만 회전하는 분리각 드릴을 10회×3세트.",
+                "metric": "x_factor_deg",
+                "target": targets["x_factor_deg"],
+            }
+        elif "tempo_off" in flags:
+            primary = {
+                "title": "오늘의 1개: 3:1 템포 맞추기",
+                "reason": "백스윙:다운스윙 템포가 이상 범위를 벗어났습니다.",
+                "drill": "메트로놈/카운트(‘하나-둘-셋’ 백스윙, ‘하나’ 다운스윙)로 10회 반복하세요.",
+                "metric": "tempo_ratio",
+                "target": targets["tempo_ratio"],
+            }
+        elif "knee_out_of_range" in flags or "spine_out_of_range" in flags:
+            primary = {
+                "title": "오늘의 1개: 자세 안정(무릎/척추) 유지",
+                "reason": "자세 각도가 목표 범위를 벗어났습니다.",
+                "drill": "거울/영상으로 백스윙~다운스윙 동안 무릎 굴곡과 척추 각도를 유지하는 ‘정지-확인’ 드릴을 5회×3세트.",
+                "metric": "posture",
+                "target": {"knee": targets["knee_flexion_deg"], "spine": targets["spine_angle_deg"]},
+            }
+
         evaluation = {
             "overall_score": float(overall),
             "components": {
@@ -444,6 +497,8 @@ class GolfPhysicsEngine:
             },
             "flags": flags,
             "recommendations": recommendations,
+            "targets": targets,
+            "primary_recommendation": primary,
         }
         if peak_idx is not None or impact_idx is not None:
             evaluation["phases"] = {"peak_idx": peak_idx, "impact_idx": impact_idx}

@@ -45,6 +45,14 @@ export interface AnalysisResult {
         };
         flags: string[];
         recommendations: string[];
+        targets?: Record<string, { min: number; max: number; unit: string } | { knee: { min: number; max: number; unit: string }; spine: { min: number; max: number; unit: string } }>;
+        primary_recommendation?: {
+            title: string;
+            reason: string;
+            drill: string;
+            metric: string;
+            target: any;
+        } | null;
         phases?: {
             peak_idx?: number;
             impact_idx?: number;
