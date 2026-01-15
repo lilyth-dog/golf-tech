@@ -1,8 +1,22 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const ROUTES = ['/', '/profile', '/analyze', '/swing-analysis', '/login', '/register'] as const;
 
-function attachApiMocks(page: import('@playwright/test').Page) {
+async function saveIstanbulCoverage(page: Page, nameHint: string) {
+  if (!process.env.VITE_COVERAGE) return;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cov = await page.evaluate(() => (window as any).__coverage__ ?? null);
+  if (!cov) return;
+  const dir = path.join(process.cwd(), '.nyc_output');
+  fs.mkdirSync(dir, { recursive: true });
+  const safe = nameHint.replace(/[^a-zA-Z0-9._-]+/g, '_');
+  const file = path.join(dir, `coverage-${Date.now()}-${safe}.json`);
+  fs.writeFileSync(file, JSON.stringify(cov));
+}
+
+function attachApiMocks(page: Page) {
   // Auth endpoints
   page.route('**/api/auth/login/', async (route) => {
     await route.fulfill({
@@ -103,6 +117,27 @@ function attachApiMocks(page: import('@playwright/test').Page) {
       }),
     });
   });
+
+  // Video upload endpoint
+  page.route('**/api/analysis/upload/', async (route) => {
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 555,
+        created_at: new Date().toISOString(),
+        video_url: '/media/uploads/e2e.mp4',
+        shoulder_angle: 90,
+        hip_rotation: 45,
+        knee_flexion: 25,
+        spine_angle: 40,
+        ai_feedback: '업로드 기반 분석(목킹) 완료',
+        x_factor: 45,
+        angular_momentum: 12.34,
+        physics_score: 88,
+      }),
+    });
+  });
 }
 
 test.beforeEach(async ({ page }) => {
@@ -124,6 +159,10 @@ test.beforeEach(async ({ page }) => {
   });
 
   attachApiMocks(page);
+});
+
+test.afterEach(async ({ page }, testInfo) => {
+  await saveIstanbulCoverage(page, `${testInfo.title.replace(/\s+/g, '_')}`);
 });
 
 test('unauthenticated users are redirected to /login', async ({ page }) => {
@@ -152,6 +191,10 @@ test('login flow works and routes are reachable (>= 98% route coverage)', async 
   await expect(page).toHaveURL(/\/profile$/);
   visited.add('/profile');
   await expect(page.getByText('My Profile')).toBeVisible();
+  // Touch save path for coverage
+  await page.getByPlaceholder('Enter nickname').fill('E2E2');
+  await page.getByRole('button', { name: /Save Profile/i }).click();
+  await expect(page.getByText(/Profile updated successfully!/i)).toBeVisible();
 
   // Analyze (3D)
   await page.goto('/analyze');
@@ -169,6 +212,22 @@ test('login flow works and routes are reachable (>= 98% route coverage)', async 
   await expect(page).toHaveURL(/\/swing-analysis$/);
   visited.add('/swing-analysis');
   await expect(page.getByText('🏌️ 스윙 영상 분석')).toBeVisible();
+  // Upload invalid file (non-video)
+  const uploadInput = page.locator('input[type="file"]');
+  await uploadInput.setInputFiles({
+    name: 'bad.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('x'),
+  });
+  await expect(page.getByText('동영상 파일만 업로드 가능합니다.')).toBeVisible();
+  // Upload valid video file and start analysis
+  await uploadInput.setInputFiles({
+    name: 'swing.mp4',
+    mimeType: 'video/mp4',
+    buffer: Buffer.from('fake'),
+  });
+  await page.getByRole('button', { name: /영상 분석 시작/i }).click();
+  await expect(page.getByText(/업로드 기반 분석/)).toBeVisible();
 
   // Register page reachable
   await page.goto('/register');
@@ -178,5 +237,16 @@ test('login flow works and routes are reachable (>= 98% route coverage)', async 
 
   const coverage = visited.size / ROUTES.length;
   expect(coverage).toBeGreaterThanOrEqual(0.98);
+});
+
+test('login failure shows error message', async ({ page }) => {
+  await page.route('**/api/auth/login/', async (route) => {
+    await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ detail: 'invalid' }) });
+  });
+  await page.goto('/login');
+  await page.getByPlaceholder('Enter your username').fill('u1');
+  await page.getByPlaceholder('Enter your password').fill('bad');
+  await page.getByRole('button', { name: 'Sign In' }).click();
+  await expect(page.getByText('Invalid credentials')).toBeVisible();
 });
 

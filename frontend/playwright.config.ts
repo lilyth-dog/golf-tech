@@ -24,6 +24,7 @@ export default defineConfig({
     env: {
       ...process.env,
       VITE_E2E: '1',
+      VITE_COVERAGE: process.env.VITE_COVERAGE ?? '',
     },
   },
 });

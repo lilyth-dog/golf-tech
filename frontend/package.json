@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:cov": "VITE_COVERAGE=1 npm run test:e2e && nyc report --reporter=text-summary --reporter=lcov"
   },
   "dependencies": {
     "@mediapipe/pose": "^0.5.1675469404",
@@ -38,10 +39,40 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "nyc": "^17.1.0",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vite-plugin-istanbul": "^7.2.1"
+  },
+  "nyc": {
+    "all": true,
+    "clean": true,
+    "report-dir": "coverage",
+    "temp-dir": ".nyc_output",
+    "reporter": [
+      "text-summary",
+      "lcov"
+    ],
+    "extension": [
+      ".ts",
+      ".tsx"
+    ],
+    "include": [
+      "src/App.tsx",
+      "src/main.tsx",
+      "src/pages/**/*.{ts,tsx}",
+      "src/api/**/*.{ts,tsx}",
+      "src/components/ProtectedRoute.tsx",
+      "src/components/VideoUploader.tsx",
+      "src/components/FeedbackMedia.tsx",
+      "src/utils/**/*.{ts,tsx}"
+    ],
+    "exclude": [
+      "e2e/**",
+      "**/*.d.ts"
+    ]
   }
 }
