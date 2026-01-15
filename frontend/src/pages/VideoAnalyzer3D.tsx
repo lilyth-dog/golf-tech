@@ -4,7 +4,7 @@ import type { Landmark, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { Camera, Box, Activity, Wifi, WifiOff, Zap } from 'lucide-react';
 import { calculateAngle, calculateSpineAngle } from '../utils/geometry';
 import { createAnalysis } from '../api/analysis';
-import type { AnalysisFrame, AnalysisResult } from '../api/analysis';
+import type { AnalysisFrame, AnalysisResult, MetricRange } from '../api/analysis';
 import SwingCanvas from '../components/SwingCanvas';
 
 export default function VideoAnalyzer3D() {
@@ -433,22 +433,22 @@ export default function VideoAnalyzer3D() {
                                      <TargetRow
                                        label="X-Factor"
                                        value={aiResult.evaluation.inputs.x_factor}
-                                       target={aiResult.evaluation.targets.x_factor_deg as any}
+                                       target={aiResult.evaluation.targets.x_factor_deg}
                                      />
                                      <TargetRow
                                        label="Tempo"
                                        value={aiResult.evaluation.inputs.swing_tempo_ratio}
-                                       target={aiResult.evaluation.targets.tempo_ratio as any}
+                                       target={aiResult.evaluation.targets.tempo_ratio}
                                      />
                                      <TargetRow
                                        label="Release"
                                        value={aiResult.evaluation.inputs.release_rate_rad_s ?? null}
-                                       target={aiResult.evaluation.targets.release_rate_rad_s as any}
+                                       target={aiResult.evaluation.targets.release_rate_rad_s}
                                      />
                                      <TargetRow
                                        label="Lead"
                                        value={aiResult.evaluation.inputs.lead_ms ?? null}
-                                       target={aiResult.evaluation.targets.lead_ms as any}
+                                       target={aiResult.evaluation.targets.lead_ms}
                                      />
                                    </div>
                                  )}
@@ -513,7 +513,7 @@ function TargetRow({
 }: {
   label: string;
   value: number | null;
-  target: { min: number; max: number; unit: string };
+  target: MetricRange;
 }) {
   const status = getRangeStatus(value, target.min, target.max);
   const badge =

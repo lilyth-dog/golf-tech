@@ -1,5 +1,16 @@
 import client from './client';
 
+export type MetricRange = { min: number; max: number; unit: string };
+export type PostureTarget = { knee: MetricRange; spine: MetricRange };
+export type EvaluationTargets = {
+    x_factor_deg: MetricRange;
+    tempo_ratio: MetricRange;
+    knee_flexion_deg: MetricRange;
+    spine_angle_deg: MetricRange;
+    release_rate_rad_s: MetricRange;
+    lead_ms: MetricRange;
+};
+
 export interface AnalysisResult {
     id: number;
     video_url?: string;
@@ -45,13 +56,13 @@ export interface AnalysisResult {
         };
         flags: string[];
         recommendations: string[];
-        targets?: Record<string, { min: number; max: number; unit: string } | { knee: { min: number; max: number; unit: string }; spine: { min: number; max: number; unit: string } }>;
+        targets?: EvaluationTargets;
         primary_recommendation?: {
             title: string;
             reason: string;
             drill: string;
             metric: string;
-            target: any;
+            target: MetricRange | PostureTarget;
         } | null;
         phases?: {
             peak_idx?: number;
