@@ -112,12 +112,11 @@ test.beforeEach(async ({ page }) => {
     const navAny: any = navigator;
     if (!navAny.mediaDevices) navAny.mediaDevices = {};
     navAny.mediaDevices.getUserMedia = async () => {
-      // Minimal fake MediaStream
-      return {
-        getTracks() {
-          return [{ stop() {} }];
-        },
-      };
+      // Use a real MediaStream so assigning to `video.srcObject` doesn't throw.
+      const stream = new MediaStream();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (stream as any).getTracks = () => [{ stop() {} }];
+      return stream;
     };
     // Some browsers block play() in headless
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -160,6 +159,7 @@ test('login flow works and routes are reachable (>= 98% route coverage)', async 
   visited.add('/analyze');
   await expect(page.getByText(/GOLF CENTRE/i)).toBeVisible();
   await page.getByRole('button', { name: /INITIALIZE SCANNER/i }).click();
+  await expect(page.getByRole('button', { name: /GENERATE AI REPORT/i })).toBeVisible({ timeout: 10_000 });
   await page.getByRole('button', { name: /GENERATE AI REPORT/i }).click();
   await expect(page.getByText(/TODAY'S ONE THING/i)).toBeVisible();
   await expect(page.getByText(/EVALUATION/i)).toBeVisible();
