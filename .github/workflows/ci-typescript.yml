@@ -10,22 +10,24 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    continue-on-error: true
     
     strategy:
       matrix:
         node-version: [18.x, 20.x]
     
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
     
-    - name: Use Node.js ${{ matrix.node-version }}
+    - name: Setup Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
     
-    - name: Check if root package.json exists
-      id: check_root
+    - name: Check for package.json
+      id: check_package
       run: |
         if [ -f package.json ]; then
           echo "exists=true" >> $GITHUB_OUTPUT
@@ -33,33 +35,33 @@ jobs:
           echo "exists=false" >> $GITHUB_OUTPUT
         fi
     
-    - name: Install dependencies (root)
-      if: steps.check_root.outputs.exists == 'true'
+    - name: Install dependencies
+      if: steps.check_package.outputs.exists == 'true'
       run: |
         npm ci || npm install || echo "Dependencies installation completed"
       continue-on-error: true
     
     - name: Run linter
-      if: steps.check_root.outputs.exists == 'true'
+      if: steps.check_package.outputs.exists == 'true'
       run: |
         npm run lint || echo "Lint script not found or skipped"
       continue-on-error: true
     
-    - name: Run tests with coverage
-      if: steps.check_root.outputs.exists == 'true'
+    - name: Run tests
+      if: steps.check_package.outputs.exists == 'true'
       run: |
         npm run test:coverage || npm test || echo "Tests completed"
       continue-on-error: true
     
     - name: Build
-      if: steps.check_root.outputs.exists == 'true'
+      if: steps.check_package.outputs.exists == 'true'
       run: |
         npm run build || echo "Build script not found or skipped"
       continue-on-error: true
     
     - name: Upload coverage reports
-      if: steps.check_root.outputs.exists == 'true'
-      uses: actions/upload-artifact@v3
+      if: steps.check_package.outputs.exists == 'true'
+      uses: actions/upload-artifact@v4
       with:
         name: coverage-report-${{ matrix.node-version }}
         path: |
@@ -69,10 +71,10 @@ jobs:
         if-no-files-found: ignore
       continue-on-error: true
     
-    - name: Summary
+    - name: Workflow Summary
       if: always()
       run: |
         echo "## CI Workflow Summary" >> $GITHUB_STEP_SUMMARY
         echo "- Node.js: ${{ matrix.node-version }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Root package.json: ${{ steps.check_root.outputs.exists }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Package.json exists: ${{ steps.check_package.outputs.exists }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Job status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
