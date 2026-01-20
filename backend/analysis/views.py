@@ -1,17 +1,12 @@
 from rest_framework import generics, permissions
-from rest_framework.response import Response
 from .models import AnalysisResult
 from .serializers import AnalysisResultSerializer, VideoUploadSerializer
 from rest_framework.parsers import MultiPartParser, FormParser
 from .tasks import process_video_analysis
 from core.models import UserProfile
-
-class AnalysisCreateView(generics.CreateAPIView):
-    serializer_class = AnalysisResultSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
 from .physics import GolfPhysicsEngine
-from .services import get_ai_feedback # Updated service function name
+from .services import get_ai_feedback
+import numpy as np
 
 class AnalysisCreateView(generics.CreateAPIView):
     serializer_class = AnalysisResultSerializer
@@ -31,6 +26,9 @@ class AnalysisCreateView(generics.CreateAPIView):
             
         # 2. Instantiate Physics Engine
         engine = GolfPhysicsEngine(user_data)
+
+        # Optional time-series payload from client (frame-by-frame angles)
+        frames = serializer.validated_data.get("frames") or []
         
         # 3. Save initial object to get input metrics (but don't commit yet if possible, or update after)
         # For simplicity in DRF, we let it save, then update.
@@ -38,19 +36,59 @@ class AnalysisCreateView(generics.CreateAPIView):
         
         # 4. Calculate Physics Metrics
         x_factor = engine.calculate_x_factor(analysis.shoulder_angle, analysis.hip_rotation)
+        swing_tempo_ratio = 3.0
+        downswing_time_s = 0.30
+        omega_peak = engine.estimate_angular_velocity_from_x_factor(x_factor, swing_tempo_ratio=swing_tempo_ratio, downswing_time_s=downswing_time_s)
+
+        # If we have a time series, estimate tempo/downswing/omega from it.
+        ts_result = engine.analyze_frames(frames) if frames else None
+        if ts_result:
+            x_factor = ts_result["x_factor_peak"]
+            swing_tempo_ratio = ts_result["swing_tempo_ratio"]
+            downswing_time_s = ts_result["downswing_time_s"]
+            omega_peak = ts_result["omega_x_peak"]
+
+        angular_momentum = engine.estimate_angular_momentum(omega_peak, segment='trunk')
         
-        # For MVP, we estimate angular velocity as a function of X-Factor (Elastic Recoil hypothesis)
-        # In a real video stream, we'd differentiate frame-by-frame. 
-        # Here we approximate: Higher X-factor -> Potential for higher velocity
-        estimated_velocity = x_factor * 5.0 # Arbitrary scalar for demo
-        angular_momentum = engine.estimate_angular_momentum(estimated_velocity, segment='trunk')
-        
-        physics_score = engine.assess_impact_efficiency(wrist_angle=0, swing_tempo_ratio=3.0) # Ideal assumptions for single-frame
+        # Prefer last-frame posture if available, else fall back to snapshot.
+        last_knee = ts_result["knee_end"] if ts_result else None
+        last_spine = ts_result["spine_end"] if ts_result else None
+
+        physics_score = engine.assess_impact_efficiency(
+            wrist_angle=None,
+            swing_tempo_ratio=swing_tempo_ratio,
+            knee_flexion=last_knee if last_knee is not None else analysis.knee_flexion,
+            spine_angle=last_spine if last_spine is not None else analysis.spine_angle,
+        )
+
+        evaluation = engine.build_evaluation(
+            x_factor=x_factor,
+            swing_tempo_ratio=swing_tempo_ratio,
+            knee_flexion=last_knee if last_knee is not None else analysis.knee_flexion,
+            spine_angle=last_spine if last_spine is not None else analysis.spine_angle,
+            release_rate_rad_s=ts_result["release_rate_rad_s"] if ts_result else None,
+            omega_shoulder_peak=ts_result["omega_shoulder_peak"] if ts_result else None,
+            omega_hip_peak=ts_result["omega_hip_peak"] if ts_result else None,
+            omega_x_peak=ts_result["omega_x_peak"] if ts_result else None,
+            omega_shoulder_avg=ts_result["omega_shoulder_avg"] if ts_result else None,
+            omega_hip_avg=ts_result["omega_hip_avg"] if ts_result else None,
+            omega_x_avg=ts_result["omega_x_avg"] if ts_result else None,
+            alpha_shoulder_peak=ts_result["alpha_shoulder_peak"] if ts_result else None,
+            alpha_hip_peak=ts_result["alpha_hip_peak"] if ts_result else None,
+            alpha_x_peak=ts_result["alpha_x_peak"] if ts_result else None,
+            lead_ms=ts_result["lead_ms"] if ts_result else None,
+            peak_idx=ts_result["peak_idx"] if ts_result else None,
+            impact_idx=ts_result["impact_idx"] if ts_result else None,
+        )
         
         # 5. Update Analysis Object
         analysis.x_factor = x_factor
         analysis.angular_momentum = angular_momentum
         analysis.physics_score = physics_score
+        analysis.swing_tempo_ratio = swing_tempo_ratio if ts_result else None
+        analysis.downswing_time_s = downswing_time_s if ts_result else None
+        analysis.omega_peak = omega_peak if ts_result else None
+        analysis.evaluation = evaluation
         
         # 6. Call AI Service with Enhanced Data
         metrics = {
@@ -60,7 +98,11 @@ class AnalysisCreateView(generics.CreateAPIView):
             'spine_angle': analysis.spine_angle,
             'x_factor': x_factor,
             'angular_momentum': f"{angular_momentum:.2f} kg·m²/s",
-            'physics_score': physics_score
+            'physics_score': physics_score,
+            'swing_tempo_ratio': swing_tempo_ratio,
+            'downswing_time_s': downswing_time_s,
+            'omega_peak': omega_peak,
+            'evaluation': evaluation,
         }
         
         ai_advice = get_ai_feedback(metrics)

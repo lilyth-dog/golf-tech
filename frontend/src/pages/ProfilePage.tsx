@@ -99,8 +99,9 @@ export default function ProfilePage() {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="text-sm font-medium text-gray-600">Nickname</label>
+                <label htmlFor="profile-nickname" className="text-sm font-medium text-gray-600">Nickname</label>
                 <input
+                  id="profile-nickname"
                   type="text"
                   name="nickname"
                   value={profile.nickname || ''}
@@ -119,40 +120,40 @@ export default function ProfilePage() {
             </h2>
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                <label htmlFor="profile-height" className="text-xs font-medium text-gray-500 flex items-center gap-1">
                   <Ruler className="w-3 h-3" /> Height (cm)
                 </label>
-                <input type="number" name="height" value={profile.height || ''} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
+                <input id="profile-height" type="number" name="height" value={profile.height || ''} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                <label htmlFor="profile-weight" className="text-xs font-medium text-gray-500 flex items-center gap-1">
                   <Weight className="w-3 h-3" /> Weight (kg)
                 </label>
-                <input type="number" name="weight" value={profile.weight || ''} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
+                <input id="profile-weight" type="number" name="weight" value={profile.weight || ''} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                <label htmlFor="profile-skeletal-muscle-mass" className="text-xs font-medium text-gray-500 flex items-center gap-1">
                   <Dumbbell className="w-3 h-3" /> Skeletal Muscle (kg)
                 </label>
-                <input type="number" name="skeletal_muscle_mass" value={profile.skeletal_muscle_mass || ''} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
+                <input id="profile-skeletal-muscle-mass" type="number" name="skeletal_muscle_mass" value={profile.skeletal_muscle_mass || ''} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                <label htmlFor="profile-body-fat-percentage" className="text-xs font-medium text-gray-500 flex items-center gap-1">
                   <Percent className="w-3 h-3" /> Body Fat (%)
                 </label>
-                <input type="number" name="body_fat_percentage" value={profile.body_fat_percentage || ''} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
+                <input id="profile-body-fat-percentage" type="number" name="body_fat_percentage" value={profile.body_fat_percentage || ''} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
               </div>
                <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                <label htmlFor="profile-bmi" className="text-xs font-medium text-gray-500 flex items-center gap-1">
                   <Activity className="w-3 h-3" /> BMI
                 </label>
-                <input type="number" name="bmi" value={profile.bmi || ''} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
+                <input id="profile-bmi" type="number" name="bmi" value={profile.bmi || ''} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
               </div>
                <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                <label htmlFor="profile-body-water-percentage" className="text-xs font-medium text-gray-500 flex items-center gap-1">
                   <Droplets className="w-3 h-3" /> Body Water (%)
                 </label>
-                <input type="number" name="body_water_percentage" value={profile.body_water_percentage || ''} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
+                <input id="profile-body-water-percentage" type="number" name="body_water_percentage" value={profile.body_water_percentage || ''} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
               </div>
             </div>
           </div>
@@ -164,16 +165,16 @@ export default function ProfilePage() {
             </h2>
              <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                <label htmlFor="profile-handicap" className="text-xs font-medium text-gray-500 flex items-center gap-1">
                   <Award className="w-3 h-3" /> Handicap
                 </label>
-                <input type="number" name="handicap" value={profile.handicap || 0} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
+                <input id="profile-handicap" type="number" name="handicap" value={profile.handicap || 0} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                <label htmlFor="profile-years-experience" className="text-xs font-medium text-gray-500 flex items-center gap-1">
                   <Clock className="w-3 h-3" /> Experience (Years)
                 </label>
-                <input type="number" name="years_experience" value={profile.years_experience || 0} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
+                <input id="profile-years-experience" type="number" name="years_experience" value={profile.years_experience || 0} onChange={handleChange} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none" />
               </div>
             </div>
           </div>

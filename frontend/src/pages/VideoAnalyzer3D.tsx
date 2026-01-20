@@ -1,9 +1,10 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { PoseLandmarker, FilesetResolver, DrawingUtils } from '@mediapipe/tasks-vision';
+import type { Landmark, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { Camera, Box, Activity, Wifi, WifiOff, Zap } from 'lucide-react';
 import { calculateAngle, calculateSpineAngle } from '../utils/geometry';
 import { createAnalysis } from '../api/analysis';
-import type { AnalysisResult } from '../api/analysis';
+import type { AnalysisFrame, AnalysisResult, MetricRange } from '../api/analysis';
 import SwingCanvas from '../components/SwingCanvas';
 
 export default function VideoAnalyzer3D() {
@@ -12,7 +13,7 @@ export default function VideoAnalyzer3D() {
   const [landmarker, setLandmarker] = useState<PoseLandmarker | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [metrics, setMetrics] = useState({ shoulder: 0, hip: 0, knee: 0, spine: 0, handZ: 0 });
-  const [worldLandmarks, setWorldLandmarks] = useState<any[]>([]);
+  const [worldLandmarks, setWorldLandmarks] = useState<Landmark[]>([]);
   const [aiResult, setAiResult] = useState<AnalysisResult | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
@@ -20,9 +21,14 @@ export default function VideoAnalyzer3D() {
   const requestRef = useRef<number>(0);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const analyzingRef = useRef(false);
+  const framesRef = useRef<AnalysisFrame[]>([]);
+  const lastSampleMsRef = useRef<number | null>(null);
+  const lastUiUpdateMsRef = useRef<number | null>(null);
 
   // 1. WebSocket Connection with Auto-Reconnect
-  const connectWebSocket = useCallback(() => {
+  const connectWebSocket = useCallback(function connectWebSocket() {
+      if (import.meta.env.VITE_E2E) return;
       if (socketRef.current?.readyState === WebSocket.OPEN) return;
 
       const ws = new WebSocket('ws://localhost:8001/ws/pose/');
@@ -56,8 +62,13 @@ export default function VideoAnalyzer3D() {
       }
   }, [connectWebSocket]);
 
+  useEffect(() => {
+    analyzingRef.current = analyzing;
+  }, [analyzing]);
+
   // 1b. Load MediaPipe PoseLandmarker
   useEffect(() => {
+    if (import.meta.env.VITE_E2E) return;
     const createLandmarker = async () => {
       try {
         const vision = await FilesetResolver.forVisionTasks(
@@ -80,23 +91,45 @@ export default function VideoAnalyzer3D() {
   }, []);
 
   // 2. Frame Processing Loop
-  const predictWebcam = () => {
+  const predictWebcam = useCallback(function predictWebcam(timestampMs: number) {
     if (!landmarker || !videoRef.current || !canvasRef.current) return;
-    
-    let startTimeMs = performance.now();
-    
+
     if (videoRef.current.videoWidth > 0) {
-        const result = landmarker.detectForVideo(videoRef.current, startTimeMs);
+        const result = landmarker.detectForVideo(videoRef.current, timestampMs);
         
         if (result.landmarks && result.landmarks.length > 0) {
-            drawLandmarks(result.landmarks[0]);
-            calculateMetrics3D(result.worldLandmarks[0]); 
-            setWorldLandmarks(result.worldLandmarks[0]);
+            drawLandmarks(result.landmarks[0] as NormalizedLandmark[]);
+            const nextMetrics = calculateMetrics3D(result.worldLandmarks[0] as Landmark[]);
+            // Throttle expensive state updates to keep UI smooth.
+            const lastUi = lastUiUpdateMsRef.current;
+            if (lastUi === null || timestampMs - lastUi >= 33) {
+              lastUiUpdateMsRef.current = timestampMs;
+              setWorldLandmarks(result.worldLandmarks[0] as Landmark[]);
+            }
+
+            // Sample ~30fps to avoid huge payloads
+            if (nextMetrics) {
+              const last = lastSampleMsRef.current;
+              if (last === null || timestampMs - last >= 33) {
+                lastSampleMsRef.current = timestampMs;
+                framesRef.current.push({
+                  timestamp_ms: timestampMs,
+                  shoulder_angle: Math.abs(nextMetrics.shoulder),
+                  hip_rotation: Math.abs(nextMetrics.hip),
+                  knee_flexion: Math.abs(nextMetrics.knee),
+                  spine_angle: Math.abs(nextMetrics.spine),
+                });
+                // Cap frames buffer (about 20s @ 30fps)
+                if (framesRef.current.length > 600) {
+                  framesRef.current.splice(0, framesRef.current.length - 600);
+                }
+              }
+            }
             
             // Stream to Backend -> Unreal
             if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
                 const packet = {
-                    timestamp: startTimeMs,
+                    timestamp: timestampMs,
                     landmarks: result.worldLandmarks[0]
                 };
                 socketRef.current.send(JSON.stringify(packet));
@@ -104,24 +137,24 @@ export default function VideoAnalyzer3D() {
         }
     }
 
-    if (analyzing) {
+    if (analyzingRef.current) {
         requestRef.current = requestAnimationFrame(predictWebcam);
     }
-  };
+  }, [landmarker]);
 
   useEffect(() => {
       if (analyzing && landmarker) {
-          predictWebcam();
+          requestRef.current = requestAnimationFrame(predictWebcam);
       } else {
           if (requestRef.current) cancelAnimationFrame(requestRef.current);
       }
       return () => {
          if (requestRef.current) cancelAnimationFrame(requestRef.current);
       }
-  }, [analyzing, landmarker]);
+  }, [analyzing, landmarker, predictWebcam]);
 
   // 3. Drawing (2D Overlay)
-  const drawLandmarks = (landmarks: any[]) => {
+  const drawLandmarks = (landmarks: NormalizedLandmark[]) => {
       const ctx = canvasRef.current?.getContext('2d');
       if (!ctx || !canvasRef.current) return;
       
@@ -148,7 +181,7 @@ export default function VideoAnalyzer3D() {
   };
 
   // 4. Metrics Calculation
-  const calculateMetrics3D = (landmarks: any[]) => {
+  const calculateMetrics3D = (landmarks: Landmark[]) => {
       // 11=LeftShoulder, 12=RightShoulder, 23=LeftHip, 24=RightHip, 25=LeftKnee, 27=LeftAnkle, 16=RightWrist
       const leftShoulder = landmarks[11];
       const rightShoulder = landmarks[12];
@@ -161,7 +194,7 @@ export default function VideoAnalyzer3D() {
       if (!leftShoulder || !rightHip) return;
 
       const handZ = rightWrist.z * 100;
-      const toPoint = (lm: any) => ({ position: { x: lm.x, y: lm.y } });
+      const toPoint = (lm: Landmark) => ({ position: { x: lm.x, y: lm.y } });
 
       const shoulderAng = calculateAngle(
               { position: { x: leftShoulder.x, y: leftShoulder.y - 1 } }, // Vertical
@@ -176,17 +209,23 @@ export default function VideoAnalyzer3D() {
       const kneeFlex = calculateAngle(toPoint(leftHip), toPoint(leftKnee), toPoint(leftAnkle));
       const spine = calculateSpineAngle(toPoint(leftShoulder), toPoint(rightShoulder), toPoint(leftHip), toPoint(rightHip));
 
-      setMetrics({
+      const next = {
           shoulder: Math.round(90 - shoulderAng),
           hip: Math.round(90 - hipAng),
           knee: Math.round(180 - kneeFlex),
           spine: Math.round(spine),
           handZ: handZ
-      });
+      };
+
+      setMetrics(next);
+      return next;
   };
 
   const startCamera = async () => {
     try {
+      framesRef.current = [];
+      lastSampleMsRef.current = null;
+      lastUiUpdateMsRef.current = null;
       const constraints = { video: { width: 1280, height: 720 } };
       const s = await navigator.mediaDevices.getUserMedia(constraints);
       setStream(s);
@@ -210,9 +249,13 @@ export default function VideoAnalyzer3D() {
              shoulder_angle: Math.abs(metrics.shoulder),
              hip_rotation: Math.abs(metrics.hip),
              knee_flexion: Math.abs(metrics.knee),
-             spine_angle: Math.abs(metrics.spine)
+             spine_angle: Math.abs(metrics.spine),
+             frames: framesRef.current.length > 0 ? framesRef.current : undefined,
            });
            setAiResult(result);
+           framesRef.current = [];
+           lastSampleMsRef.current = null;
+           lastUiUpdateMsRef.current = null;
        } catch (e) {
            console.error("Analysis submission failed", e);
        }
@@ -300,6 +343,127 @@ export default function VideoAnalyzer3D() {
                                  <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">MISTRAL-7B</span>
                              </div>
                              <p className="text-slate-300 text-sm leading-relaxed mb-4">{aiResult.ai_feedback}</p>
+
+                             {aiResult.evaluation && (
+                               <div className="mb-4 p-3 rounded-lg bg-slate-950 border border-slate-700">
+                                 <div className="flex items-center justify-between mb-2">
+                                   <span className="text-[10px] font-bold text-slate-300 tracking-wider">EVALUATION</span>
+                                   <span className="text-xs font-black text-emerald-400">
+                                     {aiResult.evaluation.overall_score.toFixed(0)}/100
+                                   </span>
+                                 </div>
+                                 <div className="grid grid-cols-3 gap-2 text-center">
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-300 font-bold">X-FACTOR</div>
+                                     <div className="text-sm font-black text-white">{aiResult.evaluation.components.x_factor_score.toFixed(0)}</div>
+                                   </div>
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-300 font-bold">TEMPO</div>
+                                     <div className="text-sm font-black text-white">{aiResult.evaluation.components.tempo_score.toFixed(0)}</div>
+                                   </div>
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-300 font-bold">POSTURE</div>
+                                     <div className="text-sm font-black text-white">{aiResult.evaluation.components.posture_score.toFixed(0)}</div>
+                                   </div>
+                                 </div>
+
+                                 {aiResult.evaluation.primary_recommendation && (
+                                   <div className="mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+                                     <div className="text-[10px] font-bold text-emerald-400 tracking-wider mb-1">
+                                       TODAY'S ONE THING
+                                     </div>
+                                     <div className="text-sm font-black text-white mb-1">
+                                       {aiResult.evaluation.primary_recommendation.title}
+                                     </div>
+                                     <div className="text-xs text-slate-300 mb-2">
+                                       {aiResult.evaluation.primary_recommendation.reason}
+                                     </div>
+                                     <div className="text-xs text-slate-200 leading-relaxed">
+                                       {aiResult.evaluation.primary_recommendation.drill}
+                                     </div>
+                                   </div>
+                                 )}
+
+                                 <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-300 font-bold">RELEASE</div>
+                                     <div className="text-sm font-black text-white">
+                                       {(aiResult.evaluation.components.release_score ?? 0).toFixed(0)}
+                                     </div>
+                                   </div>
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-300 font-bold">SEQUENCE</div>
+                                     <div className="text-sm font-black text-white">
+                                       {(aiResult.evaluation.components.sequence_score ?? 0).toFixed(0)}
+                                     </div>
+                                   </div>
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-300 font-bold">ROT SPEED</div>
+                                     <div className="text-sm font-black text-white">
+                                       {(aiResult.evaluation.components.rotation_speed_score ?? 0).toFixed(0)}
+                                     </div>
+                                   </div>
+                                 </div>
+
+                                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-300">
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-300 font-bold mb-1">TEMPO / DOWNSWING</div>
+                                     <div className="flex justify-between">
+                                       <span>Tempo</span>
+                                       <span className="font-mono">{aiResult.evaluation.inputs.swing_tempo_ratio.toFixed(2)}</span>
+                                     </div>
+                                     <div className="flex justify-between">
+                                       <span>Downswing</span>
+                                       <span className="font-mono">{(aiResult.downswing_time_s ?? 0).toFixed(2)}s</span>
+                                     </div>
+                                   </div>
+                                   <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                                     <div className="text-[10px] text-slate-300 font-bold mb-1">RELEASE / SEQUENCE</div>
+                                     <div className="flex justify-between">
+                                       <span>Release</span>
+                                       <span className="font-mono">{(aiResult.evaluation.inputs.release_rate_rad_s ?? 0).toFixed(2)} rad/s</span>
+                                     </div>
+                                     <div className="flex justify-between">
+                                       <span>Lead</span>
+                                       <span className="font-mono">{(aiResult.evaluation.inputs.lead_ms ?? 0).toFixed(0)} ms</span>
+                                     </div>
+                                   </div>
+                                 </div>
+
+                                 {aiResult.evaluation.targets && (
+                                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                     <TargetRow
+                                       label="X-Factor"
+                                       value={aiResult.evaluation.inputs.x_factor}
+                                       target={aiResult.evaluation.targets.x_factor_deg}
+                                     />
+                                     <TargetRow
+                                       label="Tempo"
+                                       value={aiResult.evaluation.inputs.swing_tempo_ratio}
+                                       target={aiResult.evaluation.targets.tempo_ratio}
+                                     />
+                                     <TargetRow
+                                       label="Release"
+                                       value={aiResult.evaluation.inputs.release_rate_rad_s ?? null}
+                                       target={aiResult.evaluation.targets.release_rate_rad_s}
+                                     />
+                                     <TargetRow
+                                       label="Lead"
+                                       value={aiResult.evaluation.inputs.lead_ms ?? null}
+                                       target={aiResult.evaluation.targets.lead_ms}
+                                     />
+                                   </div>
+                                 )}
+                                 {aiResult.evaluation.recommendations?.length > 0 && (
+                                   <ul className="mt-3 space-y-1 text-xs text-slate-300 list-disc list-inside">
+                                     {aiResult.evaluation.recommendations.slice(0, 3).map((r) => (
+                                       <li key={r}>{r}</li>
+                                     ))}
+                                   </ul>
+                                 )}
+                               </div>
+                             )}
+
                              <button onClick={() => setAiResult(null)} className="w-full py-2 border border-slate-600 text-slate-400 rounded-lg text-xs font-bold hover:bg-slate-700 hover:text-white transition">
                                 DISMISS
                              </button>
@@ -327,19 +491,63 @@ function MetricCard({label, value, target, is3D}: {label: string, value: number,
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
             
             <div className="flex flex-col">
-                <span className="text-[10px] font-bold text-slate-500 tracking-wider mb-1">{label}</span>
+                <span className="text-[10px] font-bold text-slate-400 tracking-wider mb-1">{label}</span>
                 <div className="flex items-baseline gap-1">
                     <span className={`text-2xl font-black font-mono ${is3D ? 'text-blue-400' : 'text-white'}`}>
                         {value.toFixed(0)}
                     </span>
-                    <span className="text-xs text-slate-600 font-bold">{is3D ? 'cm' : '°'}</span>
+                    <span className="text-xs text-slate-300 font-bold">{is3D ? 'cm' : '°'}</span>
                 </div>
             </div>
             
             <div className="text-right flex flex-col items-end">
-                <span className="text-[10px] text-slate-600 uppercase">Target</span>
+                <span className="text-[10px] text-slate-300 uppercase">Target</span>
                 <span className="text-xs font-bold text-emerald-500">{target}</span>
             </div>
         </div>
     )
+}
+
+function TargetRow({
+  label,
+  value,
+  target,
+}: {
+  label: string;
+  value: number | null;
+  target: MetricRange;
+}) {
+  const status = getRangeStatus(value, target.min, target.max);
+  const badge =
+    status === 'good'
+      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+      : status === 'warn'
+        ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'
+        : 'bg-red-500/10 border-red-500/30 text-red-300';
+
+  return (
+    <div className="p-2 rounded bg-slate-900 border border-slate-800">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[10px] font-bold text-slate-300">{label}</span>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${badge}`}>
+          {status.toUpperCase()}
+        </span>
+      </div>
+      <div className="flex items-center justify-between text-slate-300">
+        <span className="font-mono">{value === null ? 'N/A' : value.toFixed(2)}</span>
+        <span className="text-[10px] text-slate-300">
+          {target.min.toFixed(0)}–{target.max.toFixed(0)} {target.unit}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function getRangeStatus(value: number | null, min: number, max: number): 'good' | 'warn' | 'bad' {
+  if (value === null || Number.isNaN(value)) return 'bad';
+  if (value >= min && value <= max) return 'good';
+  const span = Math.max(1e-6, max - min);
+  const dist = value < min ? (min - value) : (value - max);
+  // within 20% of the range width => warn, else bad
+  return dist <= 0.2 * span ? 'warn' : 'bad';
 }

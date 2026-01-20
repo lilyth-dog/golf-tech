@@ -16,6 +16,14 @@ class AnalysisResult(models.Model):
     x_factor = models.FloatField(default=0.0, help_text="Shoulder-Hip separation")
     angular_momentum = models.FloatField(default=0.0, help_text="Estimated Angular Momentum")
     physics_score = models.FloatField(default=0.0, help_text="Overall Swing Efficiency Score (0-100)")
+
+    # Time-series derived metrics (optional; available when frames are provided)
+    swing_tempo_ratio = models.FloatField(null=True, blank=True, help_text="Backswing:Downswing ratio")
+    downswing_time_s = models.FloatField(null=True, blank=True, help_text="Estimated downswing duration (seconds)")
+    omega_peak = models.FloatField(null=True, blank=True, help_text="Estimated peak angular velocity (rad/s)")
+
+    # Evaluation breakdown (component scores, flags, recommendations)
+    evaluation = models.JSONField(default=dict, blank=True)
     
     # AI Feedback
     ai_feedback = models.TextField(blank=True, help_text="Generated advice from LLM")

@@ -1,4 +1,4 @@
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from unittest.mock import patch, MagicMock
 from analysis.services import get_ai_feedback, simulate_offline_feedback
 import requests
@@ -6,6 +6,7 @@ import requests
 class ServicesTests(TestCase):
     
     @patch('analysis.services.requests.post')
+    @override_settings(HF_API_KEY="test_hf_key")
     def test_get_ai_feedback_success(self, mock_post):
         # Mock successful response
         mock_response = MagicMock()
@@ -18,6 +19,7 @@ class ServicesTests(TestCase):
         self.assertEqual(feedback, "Good swing!")
 
     @patch('analysis.services.requests.post')
+    @override_settings(HF_API_KEY="test_hf_key")
     def test_get_ai_feedback_api_failure_fallback(self, mock_post):
         # Mock connection error
         mock_post.side_effect = requests.exceptions.RequestException("Connection refused")

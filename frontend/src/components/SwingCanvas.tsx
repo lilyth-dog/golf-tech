@@ -1,18 +1,19 @@
-import { useRef, useMemo } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Grid } from '@react-three/drei';
+import { useMemo } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, Grid, Line } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { PoseLandmarker } from '@mediapipe/tasks-vision';
+import type { Landmark } from '@mediapipe/tasks-vision';
 
 // BlazePose topology connections
 const CONNECTIONS = PoseLandmarker.POSE_CONNECTIONS;
 
 interface SwingCanvasProps {
-  landmarks: any[]; // MediaPipe World Landmarks
+  landmarks: Landmark[]; // MediaPipe World Landmarks
 }
 
-function Skeleton({ landmarks }: { landmarks: any[] }) {
+function Skeleton({ landmarks }: { landmarks: Landmark[] }) {
   const points = useMemo(() => {
     if (!landmarks || landmarks.length === 0) return [];
     return landmarks.map(lm => new THREE.Vector3(lm.x, -lm.y, -lm.z)); // Flip Y/Z
@@ -50,25 +51,8 @@ function Skeleton({ landmarks }: { landmarks: any[] }) {
 }
 
 function GlowingLine({ start, end }: { start: THREE.Vector3; end: THREE.Vector3 }) {
-  const ref = useRef<any>(null)
-  
-  useFrame(() => {
-    if (ref.current) {
-      ref.current.setPoints(start, end);
-    }
-  })
-  
   return (
-      <line>
-          <bufferGeometry>
-              <float32BufferAttribute
-                  attach="attributes-position"
-                  count={2}
-                  args={[new Float32Array([start.x, start.y, start.z, end.x, end.y, end.z]), 3]}
-              />
-          </bufferGeometry>
-          <lineBasicMaterial color="#ffffff" linewidth={1} />
-      </line>
+    <Line points={[start, end]} color="#ffffff" lineWidth={1} />
   )
 }
 

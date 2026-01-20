@@ -18,7 +18,7 @@ export default function RegisterPage() {
       await register(formData);
       // Auto login or redirect to login? Let's redirect to login for simplicity
       navigate('/login');
-    } catch (err) {
+    } catch {
       setError('Registration failed. Username might be taken.');
     } finally {
       setLoading(false);
@@ -83,6 +83,7 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label="Toggle password visibility"
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}

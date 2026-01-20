@@ -22,33 +22,101 @@ class GolfPhysicsEngine:
     def __init__(self, user_profile=None):
         self.height = user_profile['height'] if user_profile else 175  # cm (default)
         self.weight = user_profile['weight'] if user_profile else 75   # kg (default)
+
+    @staticmethod
+    def _clamp(value, lo, hi):
+        return max(lo, min(hi, value))
+
+    @staticmethod
+    def _range_penalty(value, lo, hi, weight=1.0):
+        """
+        Penalize distance from an acceptable range [lo, hi].
+        Returns a non-negative penalty.
+        """
+        if value is None:
+            return 0.0
+        if value < lo:
+            return (lo - value) * weight
+        if value > hi:
+            return (value - hi) * weight
+        return 0.0
+
+    @staticmethod
+    def _moving_average(values, window=5):
+        """
+        Simple moving average with edge padding.
+        """
+        arr = np.asarray(values, dtype=float)
+        if arr.size == 0:
+            return arr
+        w = int(window or 1)
+        if w <= 1 or arr.size < 3:
+            return arr
+        w = min(w, int(arr.size))
+        kernel = np.ones(w, dtype=float) / float(w)
+        # Pad with edge values to avoid shrinking.
+        pad = w // 2
+        padded = np.pad(arr, (pad, pad), mode="edge")
+        smoothed = np.convolve(padded, kernel, mode="valid")
+        return smoothed
         
     def calculate_x_factor(self, shoulder_angle, hip_angle):
         """
         X-Factor: The separation between shoulder and hip rotation.
         Key for power generation (Elastic potential energy).
         """
-        # Ensure we are dealing with magnitudes appropriately
-        return abs(shoulder_angle) - abs(hip_angle)
+        # X-Factor is the separation between the two rotations, not the difference of magnitudes.
+        # Using abs(|a| - |b|) can undercount and can even go negative depending on usage elsewhere.
+        return abs(shoulder_angle - hip_angle)
 
-    def assess_impact_efficiency(self, wrist_angle, swing_tempo_ratio):
+    def assess_impact_efficiency(self, wrist_angle=None, swing_tempo_ratio=None, knee_flexion=None, spine_angle=None):
         """
-        Evaluates impact timing and tempo.
+        Evaluates impact timing and basic kinematic quality.
         wrist_angle: < 10 degrees implies full uncocking (ideal impact).
         swing_tempo_ratio: Ideal is ~3.0 (3:1 backswing to downswing).
+        knee_flexion: Ideal ~20-30 degrees.
+        spine_angle: Ideal ~35-45 degrees.
         """
-        score = 100
+        score = 100.0
         
         # Penalize casting (wrist uncocking too early) or holding off too long
-        if wrist_angle > 15:
-            score -= (wrist_angle - 15) * 2
+        if wrist_angle is not None and wrist_angle > 15:
+            score -= (wrist_angle - 15) * 2.0
             
         # Penalize tempo deviation
-        if swing_tempo_ratio:
+        if swing_tempo_ratio is not None:
             deviation = abs(swing_tempo_ratio - 3.0)
-            score -= deviation * 10
+            score -= deviation * 10.0
+
+        # Penalize posture/stability deviations (simple range-based penalties)
+        score -= self._range_penalty(knee_flexion, 20.0, 30.0, weight=1.5)
+        score -= self._range_penalty(spine_angle, 35.0, 45.0, weight=1.0)
             
-        return max(0, min(100, score))
+        return max(0.0, min(100.0, score))
+
+    def estimate_angular_velocity_from_x_factor(self, x_factor_deg, swing_tempo_ratio=3.0, downswing_time_s=0.30):
+        """
+        Heuristic angular velocity estimate from X-Factor.
+        - Convert separation angle (deg) -> rad.
+        - Divide by an assumed downswing duration.
+        - Modulate by tempo ratio (faster downswing => slightly higher omega).
+        """
+        x = max(0.0, float(x_factor_deg or 0.0))
+        # Keep within a realistic envelope for this simplified model.
+        x = self._clamp(x, 0.0, 70.0)
+
+        tempo = float(swing_tempo_ratio or 3.0)
+        tempo = self._clamp(tempo, 1.5, 5.0)
+
+        # If tempo ratio is higher, downswing is relatively faster; apply mild boost.
+        tempo_multiplier = self._clamp(3.0 / tempo, 0.6, 1.4)
+
+        dt = float(downswing_time_s or 0.30)
+        dt = self._clamp(dt, 0.20, 0.60)
+
+        radians = x * (np.pi / 180.0)
+        omega = (radians / dt) * tempo_multiplier  # rad/s
+        return omega
 
     def estimate_angular_momentum(self, angular_velocity, segment='trunk'):
         """
@@ -57,11 +125,381 @@ class GolfPhysicsEngine:
         """
         mass = self.weight * self.SEGMENT_MASS_RATIOS.get(segment, 0.5)
         
-        # Radius of gyration approximation (e.g., trunk radius ~ 0.3 * height approx)
-        # This is a high-level simplification for the MVP Physics Engine
-        radius = (self.height / 100) * 0.2 
+        # Segment-specific radius factors (very simplified, in meters).
+        radius_factor = {
+            "trunk": 0.20,
+            "head": 0.10,
+            "arm_upper": 0.12,
+            "forearm": 0.10,
+            "hand": 0.08,
+            "thigh": 0.14,
+            "calf": 0.12,
+            "foot": 0.08,
+        }.get(segment, 0.20)
+
+        radius = (self.height / 100.0) * radius_factor
         
         moment_of_inertia = 0.5 * mass * (radius ** 2) # Cylinder approximation
         
-        educational_momentum = moment_of_inertia * angular_velocity
+        educational_momentum = moment_of_inertia * float(angular_velocity or 0.0)
         return educational_momentum
+
+    def analyze_frames(self, frames):
+        """
+        Analyze a list of frame dicts with keys:
+        - timestamp_ms
+        - shoulder_angle
+        - hip_rotation
+        - knee_flexion (optional)
+        - spine_angle (optional)
+
+        Returns a dict with phase indices and kinematic estimates.
+        """
+        if not frames or len(frames) < 3:
+            return None
+
+        # Sort by time to be robust against out-of-order frames.
+        fs = sorted(frames, key=lambda f: float(f.get("timestamp_ms", 0.0)))
+        ts = np.array([float(f["timestamp_ms"]) for f in fs], dtype=float)
+        # Convert ms -> seconds for derivatives.
+        t_s = (ts - ts[0]) / 1000.0
+
+        sh_deg = np.array([float(f["shoulder_angle"]) for f in fs], dtype=float)
+        hp_deg = np.array([float(f["hip_rotation"]) for f in fs], dtype=float)
+        # Use raw separation for phase detection to avoid smoothing bias on peaks.
+        x_deg_raw = np.abs(sh_deg - hp_deg)
+
+        # Smooth raw angles before differentiation (basic noise suppression).
+        sh_deg_s = self._moving_average(sh_deg, window=5)
+        hp_deg_s = self._moving_average(hp_deg, window=5)
+
+        x_deg_s = np.abs(sh_deg_s - hp_deg_s)
+        peak_idx = int(np.argmax(x_deg_raw))
+
+        t0_ms = float(ts[0])
+        t_peak_ms = float(ts[peak_idx])
+        t_end_ms = float(ts[-1])
+
+        backswing_ms = max(0.0, float(t_peak_ms - t0_ms))
+        downswing_ms = max(1.0, float(t_end_ms - t_peak_ms))
+        downswing_time_s = downswing_ms / 1000.0
+        swing_tempo_ratio = backswing_ms / downswing_ms if downswing_ms > 0 else 3.0
+
+        x_peak = float(x_deg_raw[peak_idx])
+        x_end = float(x_deg_raw[-1])
+
+        # --- Impact detection ---
+        # We use a 2-step approach:
+        # 1) Prefer the first point after peak where separation is "released enough"
+        #    (x <= max(15°, 35% of peak)) within a plausible window.
+        # 2) Fallback to minimal separation after peak within that window.
+        min_after_ms = t_peak_ms + 50.0
+        max_after_ms = min(t_peak_ms + 800.0, t_end_ms)
+        after_mask = (ts >= min_after_ms) & (ts <= max_after_ms)
+        after_idx = np.where(after_mask)[0]
+        impact_local = None
+        if after_idx.size > 0:
+            # 1) release-complete threshold hit?
+            threshold_deg = max(15.0, 0.35 * x_peak)
+            hits = after_idx[x_deg_raw[after_idx] <= threshold_deg]
+            if hits.size > 0:
+                impact_local = int(hits[0])
+            else:
+                # 2) fallback: minimal separation in window
+                impact_local = int(after_idx[np.argmin(x_deg_raw[after_idx])])
+        if impact_local is None:
+            # Fallback: minimal after peak, else last.
+            if peak_idx < (len(x_deg_raw) - 1):
+                impact_local = int(peak_idx + np.argmin(x_deg_raw[peak_idx + 1 :]))
+            else:
+                impact_local = int(len(x_deg_raw) - 1)
+        impact_idx = int(self._clamp(impact_local, peak_idx, len(x_deg_raw) - 1))
+
+        x_impact = float(x_deg_raw[impact_idx])
+        t_impact_ms = float(ts[impact_idx])
+
+        # --- Angular velocities (rad/s) ---
+        # Use numerical derivative with uneven time base; then smooth.
+        sh_rad = sh_deg_s * (np.pi / 180.0)
+        hp_rad = hp_deg_s * (np.pi / 180.0)
+        x_rad = x_deg_s * (np.pi / 180.0)
+
+        # np.gradient handles uneven spacing when provided with time.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            sh_omega = np.gradient(sh_rad, t_s)
+            hp_omega = np.gradient(hp_rad, t_s)
+            x_omega = np.gradient(x_rad, t_s)
+
+        sh_omega = self._moving_average(sh_omega, window=5)
+        hp_omega = self._moving_average(hp_omega, window=5)
+        x_omega = self._moving_average(x_omega, window=5)
+
+        # Down/impact window indices: from peak -> impact (inclusive)
+        ds_start = peak_idx
+        ds_end = impact_idx if impact_idx > peak_idx else min(len(x_deg_raw) - 1, peak_idx + 1)
+        ds_slice = slice(ds_start, ds_end + 1)
+
+        omega_shoulder_peak = float(np.nanmax(np.abs(sh_omega[ds_slice]))) if sh_omega.size else 0.0
+        omega_hip_peak = float(np.nanmax(np.abs(hp_omega[ds_slice]))) if hp_omega.size else 0.0
+        omega_x_peak = float(np.nanmax(np.abs(x_omega[ds_slice]))) if x_omega.size else 0.0
+
+        # Peak indices within downswing window
+        omega_shoulder_peak_idx = int(ds_start + int(np.nanargmax(np.abs(sh_omega[ds_slice])))) if sh_omega.size else ds_start
+        omega_hip_peak_idx = int(ds_start + int(np.nanargmax(np.abs(hp_omega[ds_slice])))) if hp_omega.size else ds_start
+        omega_x_peak_idx = int(ds_start + int(np.nanargmax(np.abs(x_omega[ds_slice])))) if x_omega.size else ds_start
+
+        # Hip->Shoulder sequencing: positive means hip peaks earlier than shoulder.
+        lead_ms = float(ts[omega_shoulder_peak_idx] - ts[omega_hip_peak_idx])
+
+        # Averages for phase windows
+        omega_shoulder_avg = float(np.nanmean(np.abs(sh_omega[ds_slice]))) if sh_omega.size else 0.0
+        omega_hip_avg = float(np.nanmean(np.abs(hp_omega[ds_slice]))) if hp_omega.size else 0.0
+        omega_x_avg = float(np.nanmean(np.abs(x_omega[ds_slice]))) if x_omega.size else 0.0
+
+        # Angular accelerations (rad/s^2)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            sh_alpha = np.gradient(sh_omega, t_s)
+            hp_alpha = np.gradient(hp_omega, t_s)
+            x_alpha = np.gradient(x_omega, t_s)
+        sh_alpha = self._moving_average(sh_alpha, window=5)
+        hp_alpha = self._moving_average(hp_alpha, window=5)
+        x_alpha = self._moving_average(x_alpha, window=5)
+
+        alpha_shoulder_peak = float(np.nanmax(np.abs(sh_alpha[ds_slice]))) if sh_alpha.size else 0.0
+        alpha_hip_peak = float(np.nanmax(np.abs(hp_alpha[ds_slice]))) if hp_alpha.size else 0.0
+        alpha_x_peak = float(np.nanmax(np.abs(x_alpha[ds_slice]))) if x_alpha.size else 0.0
+
+        # Release rate based on peak-to-impact separation change
+        release_deg = max(0.0, x_peak - x_impact)
+        release_dt_s = max(0.05, (t_impact_ms - t_peak_ms) / 1000.0)
+        release_rate_rad_s = float((release_deg * (np.pi / 180.0)) / release_dt_s)
+
+        # Clamp derived times/ratios into a realistic envelope for stability.
+        dt = self._clamp((t_impact_ms - t_peak_ms) / 1000.0, 0.20, 0.80)
+        swing_tempo_ratio = float(self._clamp(swing_tempo_ratio, 1.5, 5.0))
+
+        knee_end = fs[-1].get("knee_flexion")
+        spine_end = fs[-1].get("spine_angle")
+
+        return {
+            "x_factor_peak": x_peak,
+            "x_factor_end": x_end,
+            "x_factor_impact": x_impact,
+            "swing_tempo_ratio": swing_tempo_ratio,
+            "downswing_time_s": float(dt),
+            "omega_x_peak": omega_x_peak,
+            "omega_shoulder_peak": omega_shoulder_peak,
+            "omega_hip_peak": omega_hip_peak,
+            "omega_x_avg": omega_x_avg,
+            "omega_shoulder_avg": omega_shoulder_avg,
+            "omega_hip_avg": omega_hip_avg,
+            "alpha_x_peak": alpha_x_peak,
+            "alpha_shoulder_peak": alpha_shoulder_peak,
+            "alpha_hip_peak": alpha_hip_peak,
+            "release_rate_rad_s": release_rate_rad_s,
+            "release_deg": float(release_deg),
+            "lead_ms": lead_ms,
+            "knee_end": knee_end,
+            "spine_end": spine_end,
+            "peak_idx": peak_idx,
+            "impact_idx": impact_idx,
+            "t_peak_ms": t_peak_ms,
+            "t_impact_ms": t_impact_ms,
+        }
+
+    def build_evaluation(
+        self,
+        x_factor,
+        swing_tempo_ratio,
+        knee_flexion,
+        spine_angle,
+        release_rate_rad_s=None,
+        omega_shoulder_peak=None,
+        omega_hip_peak=None,
+        omega_x_peak=None,
+        omega_shoulder_avg=None,
+        omega_hip_avg=None,
+        omega_x_avg=None,
+        alpha_shoulder_peak=None,
+        alpha_hip_peak=None,
+        alpha_x_peak=None,
+        lead_ms=None,
+        peak_idx=None,
+        impact_idx=None,
+    ):
+        """
+        Return an evaluation breakdown for UI/AI prompt.
+        """
+        # Targets/ranges shown to users (MLP: make it obvious what "good" is)
+        targets = {
+            "x_factor_deg": {"min": 30.0, "max": 60.0, "unit": "deg"},
+            "tempo_ratio": {"min": 2.5, "max": 3.5, "unit": "ratio"},
+            "knee_flexion_deg": {"min": 20.0, "max": 30.0, "unit": "deg"},
+            "spine_angle_deg": {"min": 35.0, "max": 45.0, "unit": "deg"},
+            "release_rate_rad_s": {"min": 2.0, "max": 6.0, "unit": "rad/s"},
+            "lead_ms": {"min": 0.0, "max": 150.0, "unit": "ms"},
+        }
+
+        # Component scores (simple, interpretable)
+        tempo_penalty = self._range_penalty(swing_tempo_ratio, 2.5, 3.5, weight=20.0)  # ratio too far from ~3
+        tempo_score = self._clamp(100.0 - tempo_penalty, 0.0, 100.0)
+
+        x_penalty = self._range_penalty(x_factor, 30.0, 60.0, weight=2.0)
+        x_score = self._clamp(100.0 - x_penalty, 0.0, 100.0)
+
+        posture_penalty = self._range_penalty(knee_flexion, 20.0, 30.0, weight=2.0) + self._range_penalty(spine_angle, 35.0, 45.0, weight=2.0)
+        posture_score = self._clamp(100.0 - posture_penalty, 0.0, 100.0)
+
+        # Rotation/release/sequence scores (optional, computed when time-series is present)
+        release_score = None
+        if release_rate_rad_s is not None:
+            rr = float(release_rate_rad_s)
+            # Typical "good" window is heuristic; aim for a stable band.
+            rel_penalty = self._range_penalty(rr, 2.0, 6.0, weight=25.0)
+            release_score = float(self._clamp(100.0 - rel_penalty, 0.0, 100.0))
+
+        sequence_score = None
+        if lead_ms is not None:
+            # We want hip to lead shoulder: lead_ms >= 0, ideally ~20-120ms.
+            lm = float(lead_ms)
+            seq_penalty = self._range_penalty(lm, 0.0, 150.0, weight=0.6)
+            sequence_score = float(self._clamp(100.0 - seq_penalty, 0.0, 100.0))
+
+        rotation_score = None
+        # Keep a "rotation_speed_score" for continuity: combine peak speeds if provided.
+        if omega_shoulder_peak is not None and omega_hip_peak is not None:
+            o_sh = float(omega_shoulder_peak)
+            o_hip = float(omega_hip_peak)
+            # Penalize very low rotational speeds; cap penalty to keep bounded.
+            rot_penalty = self._range_penalty(o_sh, 2.0, 10.0, weight=4.0) + self._range_penalty(o_hip, 2.0, 10.0, weight=4.0)
+            rotation_score = float(self._clamp(100.0 - rot_penalty, 0.0, 100.0))
+
+        # Weight advanced components when available.
+        # Keep weights simple and stable for an MLP: users should feel results are consistent.
+        weights = {"x": 0.38, "tempo": 0.28, "posture": 0.20}
+        extra = []
+        if release_score is not None:
+            extra.append(("release", release_score))
+        if sequence_score is not None:
+            extra.append(("sequence", sequence_score))
+        if rotation_score is not None:
+            extra.append(("rotation", rotation_score))
+
+        if extra:
+            # Allocate up to 0.14 to extras, split evenly.
+            base_total = sum(weights.values())
+            extra_total = 1.0 - base_total
+            per = extra_total / float(len(extra))
+            overall = weights["x"] * x_score + weights["tempo"] * tempo_score + weights["posture"] * posture_score
+            for _, s in extra:
+                overall += per * s
+            overall = self._clamp(overall, 0.0, 100.0)
+        else:
+            overall = self._clamp(0.45 * x_score + 0.35 * tempo_score + 0.20 * posture_score, 0.0, 100.0)
+
+        flags = []
+        if x_factor < 30:
+            flags.append("low_x_factor")
+        if swing_tempo_ratio < 2.5 or swing_tempo_ratio > 3.5:
+            flags.append("tempo_off")
+        if knee_flexion is not None and (knee_flexion < 20 or knee_flexion > 30):
+            flags.append("knee_out_of_range")
+        if spine_angle is not None and (spine_angle < 35 or spine_angle > 45):
+            flags.append("spine_out_of_range")
+        if release_rate_rad_s is not None and float(release_rate_rad_s) < 2.0:
+            flags.append("slow_release")
+        if lead_ms is not None and float(lead_ms) < 0:
+            flags.append("sequence_off")
+
+        recommendations = []
+        if "low_x_factor" in flags:
+            recommendations.append("상체 회전을 늘리고 하체는 안정적으로 유지해 X-Factor(분리각)를 키우세요.")
+        if "tempo_off" in flags:
+            recommendations.append("백스윙을 더 천천히(리듬) 유지하고 다운스윙은 과도하게 급하지 않게 3:1 템포에 맞추세요.")
+        if "knee_out_of_range" in flags:
+            recommendations.append("무릎 굴곡을 20~30° 범위로 유지해 하체 안정성을 확보하세요.")
+        if "spine_out_of_range" in flags:
+            recommendations.append("척추 각도를 35~45° 범위로 유지해 자세 안정성을 확보하세요.")
+        if "slow_release" in flags:
+            recommendations.append("다운스윙 구간에서 분리각 릴리즈(회전 가속)가 부족합니다. 하체 리드와 상체 지연(레이트 릴리즈) 드릴을 권장합니다.")
+        if "sequence_off" in flags:
+            recommendations.append("힙(하체) 회전 피크가 상체보다 늦게 나타납니다. 다운스윙 시작은 하체 리드 → 상체/팔이 따라오도록 시퀀스를 교정하세요.")
+
+        # Pick the single most important action (MLP: "오늘의 1개")
+        primary = None
+        if "sequence_off" in flags:
+            primary = {
+                "title": "오늘의 1개: 하체 리드 시퀀스",
+                "reason": "힙 피크가 상체보다 늦게 나타났습니다(시퀀스 불일치).",
+                "drill": "스텝 드릴(왼발 스텝 후 다운스윙)로 하체 리드를 먼저 만들고, 상체/팔은 따라오게 연습하세요.",
+                "metric": "lead_ms",
+                "target": targets["lead_ms"],
+            }
+        elif "slow_release" in flags:
+            primary = {
+                "title": "오늘의 1개: 릴리즈(회전 가속) 만들기",
+                "reason": "다운스윙 구간에서 릴리즈 속도가 낮습니다.",
+                "drill": "펌프 드릴(탑→중간 다운스윙 반복)로 하체 리드+상체 지연을 느끼고, 마지막에 릴리즈를 연결하세요.",
+                "metric": "release_rate_rad_s",
+                "target": targets["release_rate_rad_s"],
+            }
+        elif "low_x_factor" in flags:
+            primary = {
+                "title": "오늘의 1개: X-Factor(분리각) 키우기",
+                "reason": "상체-하체 분리각이 낮습니다.",
+                "drill": "어드레스에서 하체 고정(가벼운 밴드/의자) 후 상체만 회전하는 분리각 드릴을 10회×3세트.",
+                "metric": "x_factor_deg",
+                "target": targets["x_factor_deg"],
+            }
+        elif "tempo_off" in flags:
+            primary = {
+                "title": "오늘의 1개: 3:1 템포 맞추기",
+                "reason": "백스윙:다운스윙 템포가 이상 범위를 벗어났습니다.",
+                "drill": "메트로놈/카운트(‘하나-둘-셋’ 백스윙, ‘하나’ 다운스윙)로 10회 반복하세요.",
+                "metric": "tempo_ratio",
+                "target": targets["tempo_ratio"],
+            }
+        elif "knee_out_of_range" in flags or "spine_out_of_range" in flags:
+            primary = {
+                "title": "오늘의 1개: 자세 안정(무릎/척추) 유지",
+                "reason": "자세 각도가 목표 범위를 벗어났습니다.",
+                "drill": "거울/영상으로 백스윙~다운스윙 동안 무릎 굴곡과 척추 각도를 유지하는 ‘정지-확인’ 드릴을 5회×3세트.",
+                "metric": "posture",
+                "target": {"knee": targets["knee_flexion_deg"], "spine": targets["spine_angle_deg"]},
+            }
+
+        evaluation = {
+            "overall_score": float(overall),
+            "components": {
+                "x_factor_score": float(x_score),
+                "tempo_score": float(tempo_score),
+                "posture_score": float(posture_score),
+                "rotation_speed_score": rotation_score,
+                "release_score": release_score,
+                "sequence_score": sequence_score,
+            },
+            "inputs": {
+                "x_factor": float(x_factor),
+                "swing_tempo_ratio": float(swing_tempo_ratio),
+                "knee_flexion": knee_flexion,
+                "spine_angle": spine_angle,
+                "release_rate_rad_s": release_rate_rad_s,
+                "omega_x_peak": omega_x_peak,
+                "omega_shoulder_peak": omega_shoulder_peak,
+                "omega_hip_peak": omega_hip_peak,
+                "omega_x_avg": omega_x_avg,
+                "omega_shoulder_avg": omega_shoulder_avg,
+                "omega_hip_avg": omega_hip_avg,
+                "alpha_x_peak": alpha_x_peak,
+                "alpha_shoulder_peak": alpha_shoulder_peak,
+                "alpha_hip_peak": alpha_hip_peak,
+                "lead_ms": lead_ms,
+            },
+            "flags": flags,
+            "recommendations": recommendations,
+            "targets": targets,
+            "primary_recommendation": primary,
+        }
+        if peak_idx is not None or impact_idx is not None:
+            evaluation["phases"] = {"peak_idx": peak_idx, "impact_idx": impact_idx}
+        return evaluation

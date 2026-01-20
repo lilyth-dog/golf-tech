@@ -4,14 +4,17 @@ from django.conf import settings
 
 # Using a more capable instruction-tuned model for better advice
 HF_API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
-# Fallback to a reliable specific key if env not set (User's Demo Key)
-HF_API_KEY = "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"
 
 def get_ai_feedback(metrics):
     """
     Sends swing metrics to Hugging Face API and returns coaching advice.
     """
-    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+    hf_api_key = getattr(settings, "HF_API_KEY", "") or ""
+    if not hf_api_key:
+        # Avoid calling external services without credentials; fall back locally.
+        return simulate_offline_feedback(metrics)
+
+    headers = {"Authorization": f"Bearer {hf_api_key}"}
     
     # Construct a physics-aware prompt
     prompt = f"""[INST] You are a professional golf biomechanics coach. Analyze the following swing metrics for a user:
@@ -70,7 +73,7 @@ def simulate_offline_feedback(metrics):
     feedback = []
     
     # X-Factor Logic (Shoulder - Hip separation)
-    x_factor = shoulder - hip
+    x_factor = abs(shoulder - hip)
     
     if shoulder < 80:
         feedback.append("Increase shoulder turn to generate more potential energy.")

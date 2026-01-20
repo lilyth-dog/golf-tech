@@ -1,6 +1,7 @@
 import os
 import json
 import cv2
+from urllib.parse import urlparse
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -12,6 +13,7 @@ from moviepy import VideoFileClip, TextClip, CompositeVideoClip
 from celery import shared_task
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from core.models import UserProfile
 
 @shared_task
 def process_video_analysis(analysis_id):
@@ -33,10 +35,22 @@ def process_video_analysis(analysis_id):
     if not video_path:
         return
 
+    # If a full URL is stored, keep only the path part.
+    if isinstance(video_path, str) and (video_path.startswith("http://") or video_path.startswith("https://")):
+        video_path = urlparse(video_path).path
+
     # Resolve absolute path (MEDIA_ROOT may contain relative URL)
     if video_path.startswith('/'):
         video_path = video_path.lstrip('/')
-    abs_video_path = os.path.join(settings.BASE_DIR, video_path)
+    if video_path.startswith(settings.MEDIA_URL.lstrip("/")):
+        # e.g. "media/uploads/..." -> "uploads/..."
+        rel_path = video_path[len(settings.MEDIA_URL.lstrip("/")):].lstrip("/")
+    elif video_path.startswith(settings.MEDIA_URL):
+        rel_path = video_path[len(settings.MEDIA_URL):].lstrip("/")
+    else:
+        rel_path = video_path
+
+    abs_video_path = os.path.join(str(settings.MEDIA_ROOT), rel_path)
     if not os.path.exists(abs_video_path):
         return
 
@@ -45,6 +59,18 @@ def process_video_analysis(analysis_id):
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
     sample_rate = max(1, frame_count // 30)  # sample up to ~30 frames
     metrics_list = []
+
+    # Use user anthropometrics if available (keeps calculations consistent across frames).
+    user_data = None
+    try:
+        profile = analysis.user.profile
+        if profile.height and profile.weight:
+            user_data = {"height": profile.height, "weight": profile.weight}
+    except UserProfile.DoesNotExist:
+        user_data = None
+
+    engine = GolfPhysicsEngine(user_profile=user_data)
+
     for i in range(0, frame_count, sample_rate):
         cap.set(cv2.CAP_PROP_POS_FRAMES, i)
         ret, frame = cap.read()
@@ -60,11 +86,15 @@ def process_video_analysis(analysis_id):
             'spine_angle': 15,
         }
         # Compute physics metrics for this frame
-        engine = GolfPhysicsEngine(user_data=None)
         x_factor = engine.calculate_x_factor(pose['shoulder_angle'], pose['hip_rotation'])
-        estimated_velocity = x_factor * 5.0
-        angular_momentum = engine.estimate_angular_momentum(estimated_velocity, segment='trunk')
-        physics_score = engine.assess_impact_efficiency(wrist_angle=0, swing_tempo_ratio=3.0)
+        omega = engine.estimate_angular_velocity_from_x_factor(x_factor, swing_tempo_ratio=3.0)
+        angular_momentum = engine.estimate_angular_momentum(omega, segment='trunk')
+        physics_score = engine.assess_impact_efficiency(
+            wrist_angle=None,
+            swing_tempo_ratio=3.0,
+            knee_flexion=pose.get("knee_flexion"),
+            spine_angle=pose.get("spine_angle"),
+        )
         metrics_list.append({
             'x_factor': x_factor,
             'angular_momentum': angular_momentum,
