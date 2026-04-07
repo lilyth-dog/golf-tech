@@ -2,8 +2,6 @@ name: Deploy frontend (Cloudflare Pages)
 
 on:
   push:
-    branches:
-      - "**"
     paths:
       - "frontend/**"
       - ".github/workflows/deploy-cloudflare-pages.yml"
