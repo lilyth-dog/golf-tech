@@ -1,7 +1,10 @@
 import axios from 'axios';
 
+const baseURL =
+  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://localhost:8000/api';
+
 const client = axios.create({
-    baseURL: 'http://localhost:8000/api', // Django API URL
+    baseURL,
     headers: {
         'Content-Type': 'application/json',
     },

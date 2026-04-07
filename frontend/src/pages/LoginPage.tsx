@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import { Eye, EyeOff, Lock, User, ArrowRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { login } from '../api/auth';
@@ -19,7 +20,19 @@ export default function LoginPage() {
       localStorage.setItem('token', response.token);
       navigate('/');
     } catch (err) {
-      setError('Invalid credentials');
+      if (axios.isAxiosError(err)) {
+        if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
+          setError('Cannot reach the API. Check that the backend is running and VITE_API_BASE_URL.');
+        } else if (typeof err.response?.data === 'object' && err.response.data && 'error' in err.response.data) {
+          setError(String((err.response.data as { error: string }).error));
+        } else if (err.response?.status === 401 || err.response?.status === 400) {
+          setError('Invalid credentials');
+        } else {
+          setError('Sign in failed. Please try again.');
+        }
+      } else {
+        setError('Something went wrong');
+      }
     } finally {
       setLoading(false);
     }
