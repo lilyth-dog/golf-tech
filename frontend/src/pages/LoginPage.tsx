@@ -22,7 +22,10 @@ export default function LoginPage() {
     } catch (err) {
       if (axios.isAxiosError(err)) {
         if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
-          setError('Cannot reach the API. Check that the backend is running and VITE_API_BASE_URL.');
+          setError(
+            'Cannot reach the API. For local dev: run the Django backend (e.g. python manage.py runserver) and npm run dev. ' +
+              'For GitHub Pages builds, set the VITE_API_BASE_URL repository secret to your public API URL and redeploy.'
+          );
         } else if (typeof err.response?.data === 'object' && err.response.data && 'error' in err.response.data) {
           setError(String((err.response.data as { error: string }).error));
         } else if (err.response?.status === 401 || err.response?.status === 400) {

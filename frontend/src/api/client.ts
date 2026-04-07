@@ -1,7 +1,14 @@
 import axios from 'axios';
 
-const baseURL =
-  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://localhost:8000/api';
+function resolveApiBaseURL(): string {
+  const fromEnv = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '');
+  if (fromEnv) return fromEnv;
+  // Dev server: use Vite proxy (vite.config.ts) so requests stay on :5173
+  if (import.meta.env.DEV) return '/api';
+  return 'http://localhost:8000/api';
+}
+
+const baseURL = resolveApiBaseURL();
 
 const client = axios.create({
     baseURL,

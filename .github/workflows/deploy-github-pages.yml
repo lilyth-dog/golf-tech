@@ -38,6 +38,8 @@ jobs:
         working-directory: frontend
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
+          # Set repo secret VITE_API_BASE_URL (e.g. https://api.example.com/api) or the Pages app cannot reach Django.
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: npm ci && npm run build
 
       - name: SPA fallback and Jekyll bypass

@@ -8,4 +8,13 @@ const base = process.env.VITE_BASE ?? '/'
 export default defineConfig({
   base,
   plugins: [react()],
+  server: {
+    proxy: {
+      // Same-origin /api in dev → Django on :8000 (avoids browser CORS to localhost:8000)
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+    },
+  },
 })
