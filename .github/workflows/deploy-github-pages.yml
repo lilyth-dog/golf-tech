@@ -1,0 +1,62 @@
+# Publishes to https://<owner>.github.io/<repo>/
+# For a user/org site (username.github.io repo), set VITE_BASE: / in the build step instead of /${{ github.event.repository.name }}/
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/deploy-github-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install and build
+        working-directory: frontend
+        env:
+          VITE_BASE: /${{ github.event.repository.name }}/
+        run: npm ci && npm run build
+
+      - name: SPA fallback and Jekyll bypass
+        run: |
+          cp frontend/dist/index.html frontend/dist/404.html
+          touch frontend/dist/.nojekyll
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
